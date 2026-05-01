@@ -253,13 +253,12 @@ func availableToolNames(appRoot, scope string) []string {
 func toolRoots(appRoot, scope string) []string {
 	candidates := []string{
 		filepath.Join(appRoot, "bin", "gmcore", scope),
-		filepath.Join(appRoot, "vendor", "gmcore", "framework", "bin", "gmcore", scope),
-		filepath.Join(appRoot, "vendor", "gmcore", "system-sdk", "bin", "gmcore", scope),
 	}
-	for _, pattern := range []string{
-		filepath.Join(appRoot, "vendor", "gmcore", "sdk", "*", "bin", "gmcore", scope),
+	patterns := []string{
+		filepath.Join(appRoot, "vendor", "gmcore", "*", "bin", "gmcore", scope),
 		filepath.Join(appRoot, "vendor", "gmcore", "bundles", "*", "bin", "gmcore", scope),
-	} {
+	}
+	for _, pattern := range patterns {
 		matches, _ := filepath.Glob(pattern)
 		candidates = append(candidates, matches...)
 	}
