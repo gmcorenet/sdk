@@ -56,6 +56,8 @@ type Runner struct {
 	Stdout          io.Writer
 	Stderr          io.Writer
 	Stdin           io.Reader
+	DryRun          bool
+	RollbackStack   []func() error
 }
 
 func LoadRecipe(path string) (Recipe, error) {
@@ -95,15 +97,63 @@ func (r Runner) RunPurge(recipe Recipe) error {
 }
 
 func (r Runner) RunSteps(steps []Step) error {
+	if r.DryRun {
+		for _, step := range steps {
+			if err := r.dryRunStep(step); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, step := range steps {
 		if err := r.RunStep(step); err != nil {
 			if step.Optional {
 				continue
 			}
+			r.Rollback()
 			return err
 		}
 	}
 	return nil
+}
+
+func (r Runner) dryRunStep(step Step) error {
+	if step.RequiresConfirmation && !r.Confirmed {
+		return fmt.Errorf("recipe action %q requires explicit confirmation", step.Action)
+	}
+	action := strings.TrimSpace(step.Action)
+	if action == "" {
+		return nil
+	}
+	if action == "os_package" || action == "apt_package" || action == "yum_package" || action == "dnf_package" || action == "apk_package" || action == "zypper_package" || action == "pacman_package" || action == "brew_package" {
+		if !r.AllowPrivileged || os.Geteuid() != 0 {
+			return fmt.Errorf("dry-run: os package action %q requires privileged installer mode", action)
+		}
+	}
+	msg := fmt.Sprintf("[dry-run] Would execute: %s", action)
+	if step.Name != "" {
+		msg += fmt.Sprintf(" (%s)", step.Name)
+	}
+	fmt.Fprintln(r.Stdout, msg)
+	return nil
+}
+
+func (r *Runner) Rollback() {
+	if len(r.RollbackStack) == 0 {
+		return
+	}
+	fmt.Fprintln(r.Stderr, "\nRolling back changes...")
+	for i := len(r.RollbackStack) - 1; i >= 0; i-- {
+		undo := r.RollbackStack[i]
+		if err := undo(); err != nil {
+			fmt.Fprintf(r.Stderr, "rollback error: %v\n", err)
+		}
+	}
+	r.RollbackStack = nil
+}
+
+func (r *Runner) PushRollback(fn func() error) {
+	r.RollbackStack = append(r.RollbackStack, fn)
 }
 
 func (r Runner) RunStep(step Step) error {
@@ -497,11 +547,14 @@ func safeJoin(base, relative string) (string, error) {
 	if base == "" {
 		return "", errors.New("missing base path")
 	}
-	target := filepath.Clean(filepath.Join(base, strings.TrimSpace(relative)))
-	if target == base {
+	relative = strings.TrimSpace(relative)
+	relative = filepath.FromSlash(relative)
+	target := filepath.Clean(filepath.Join(base, relative))
+	if target == base || target == base+string(os.PathSeparator) {
 		return target, nil
 	}
-	if !strings.HasPrefix(target, base+string(os.PathSeparator)) {
+	sep := string(os.PathSeparator)
+	if !strings.HasPrefix(target, base+sep) {
 		return "", fmt.Errorf("path %q escapes base %q", relative, base)
 	}
 	return target, nil

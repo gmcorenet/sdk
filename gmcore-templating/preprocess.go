@@ -25,11 +25,13 @@ var (
 	twigWithPattern        = regexp.MustCompile(`\{%\s*with\s+(.+?)\s*%\}`)
 	twigWithOnlyPattern    = regexp.MustCompile(`\{%\s*with\s+(.+?)\s+only\s*%\}`)
 	twigEndWithPattern     = regexp.MustCompile(`\{%\s*endwith\s*%\}`)
+	twigVerbatimPattern    = regexp.MustCompile(`(?s)\{%\s*verbatim\s*%\}(.*?)\{%\s*endverbatim\s*%\}`)
 )
 
 func preprocessTwigMarkup(source string) string {
 	source = expandTwigApplyBlocks(source)
 	source = expandTwigIncludeTags(source)
+	source = expandTwigVerbatim(source)
 	source = twigEmbedWithPattern.ReplaceAllString(source, `{{embed "$1" $2}}`)
 	source = twigEmbedPattern.ReplaceAllString(source, `{{embed "$1" .}}`)
 	source = twigEndEmbedPattern.ReplaceAllString(source, "")
@@ -74,6 +76,18 @@ func preprocessTwigMarkup(source string) string {
 		return `{{twigPrint . ` + quoteTemplateString(expr) + `}}`
 	})
 	return source
+}
+
+func expandTwigVerbatim(source string) string {
+	return twigVerbatimPattern.ReplaceAllStringFunc(source, func(raw string) string {
+		match := twigVerbatimPattern.FindStringSubmatch(raw)
+		if len(match) < 2 {
+			return raw
+		}
+		content := match[1]
+		placeholder := fmt.Sprintf("{{\x00VERBATIM_%d\x00}}", len(content))
+		return placeholder
+	})
 }
 
 func quoteTemplateString(value string) string {

@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -105,6 +106,21 @@ type instanceMetadata struct {
 }
 
 const sharedRuntimeGroup = "gmcore"
+
+var (
+	managedRoots = []string{
+		"/opt/gmcore",
+		"/var/lib/gmcore",
+		"C:\\ProgramData\\gmcore",
+	}
+)
+
+func getManagedRoots() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"C:\\ProgramData\\gmcore"}
+	}
+	return managedRoots
+}
 
 func ReadManifest(archivePath string) (ReleaseManifest, error) {
 	file, err := os.Open(archivePath)
@@ -883,11 +899,14 @@ func uint32Groups(values []int) []uint32 {
 
 func isManagedInstall(root string) bool {
 	root = filepath.Clean(strings.TrimSpace(root))
-	for _, managedRoot := range []string{
-		filepath.Clean("/opt/gmcore/app"),
-		filepath.Clean("/opt/gmcore/bin"),
-	} {
-		if root == managedRoot || strings.HasPrefix(root, managedRoot+string(os.PathSeparator)) {
+	roots := getManagedRoots()
+	sep := string(os.PathSeparator)
+	if runtime.GOOS == "windows" {
+		sep = "\\"
+	}
+	for _, managedRoot := range roots {
+		cleanRoot := filepath.Clean(managedRoot)
+		if root == cleanRoot || strings.HasPrefix(root, cleanRoot+sep) {
 			return true
 		}
 	}
@@ -1285,6 +1304,9 @@ func stopDuplicateManagedProcesses(paths RuntimePaths, timeout time.Duration) er
 }
 
 func findDuplicateManagedProcesses(paths RuntimePaths) ([]int, error) {
+	if runtime.GOOS == "windows" {
+		return findDuplicateManagedProcessesWindows(paths)
+	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, nil
@@ -1305,6 +1327,40 @@ func findDuplicateManagedProcesses(paths RuntimePaths) ([]int, error) {
 			continue
 		}
 		if values["APP_PID_FILE"] == paths.PIDPath || values["APP_DATA_DIR"] == paths.DataDir || values["APP_HTTP_SOCKET"] == paths.HTTPSocketPath {
+			if _, ok := seen[pid]; !ok {
+				seen[pid] = struct{}{}
+				out = append(out, pid)
+			}
+		}
+	}
+	return out, nil
+}
+
+func findDuplicateManagedProcessesWindows(paths RuntimePaths) ([]int, error) {
+	cmd := exec.Command("tasklist", "/FO", "CSV", "/NH")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, nil
+	}
+	seen := map[int]struct{}{}
+	var out []int
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		parts := strings.Split(line, ",")
+		if len(parts) < 2 {
+			continue
+		}
+		pidStr := strings.Trim(parts[1], "\" ")
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil || pid <= 0 || pid == os.Getpid() {
+			continue
+		}
+		cmd := exec.Command("wmic", "process", "where", fmt.Sprintf("ProcessId=%d", pid), "get", "CommandLine")
+		cmdOut, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(cmdOut), "GMCORE_MANAGED_LAUNCH=1") {
 			if _, ok := seen[pid]; !ok {
 				seen[pid] = struct{}{}
 				out = append(out, pid)

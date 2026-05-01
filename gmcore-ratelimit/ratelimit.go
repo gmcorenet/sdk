@@ -1,30 +1,31 @@
 package gmcoreratelimit
 
 import (
+	"context"
 	"errors"
-	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
+var ErrNotStored = errors.New("key not found")
+
 type Rule struct {
-	Name      string        `yaml:"name"`
-	Limit     int           `yaml:"limit"`
-	Window    time.Duration `yaml:"-"`
-	RawWindow string        `yaml:"window"`
+	Name      string
+	Limit     int
+	Window    time.Duration
+	RawWindow string
 }
 
 type Config struct {
-	Rules map[string]Rule `yaml:"rules"`
+	Rules map[string]Rule
 }
 
-type configFile struct {
-	RateLimit Config `yaml:"rate_limit"`
+type Limiter interface {
+	Allow(ctx context.Context, ruleName, key string) (bool, error)
+	Reset(ctx context.Context, ruleName, key string) error
+	Close() error
 }
 
 type entry struct {
@@ -32,14 +33,14 @@ type entry struct {
 	ExpiresAt time.Time
 }
 
-type Limiter struct {
+type MemoryLimiter struct {
 	mu    sync.Mutex
 	rules map[string]Rule
 	hits  map[string]entry
 	now   func() time.Time
 }
 
-func New(cfg Config) *Limiter {
+func NewMemoryLimiter(cfg Config) *MemoryLimiter {
 	rules := map[string]Rule{}
 	for name, rule := range cfg.Rules {
 		normalized := strings.TrimSpace(name)
@@ -63,75 +64,25 @@ func New(cfg Config) *Limiter {
 		rule.Name = normalized
 		rules[normalized] = rule
 	}
-	return &Limiter{rules: rules, hits: map[string]entry{}, now: time.Now}
+	return &MemoryLimiter{rules: rules, hits: map[string]entry{}, now: time.Now}
 }
 
 func DefaultConfig() Config {
 	return Config{Rules: map[string]Rule{
-		"security.login":          {Name: "security.login", Limit: 8, Window: time.Minute},
-		"security.token":          {Name: "security.token", Limit: 20, Window: time.Minute},
+		"security.login":           {Name: "security.login", Limit: 8, Window: time.Minute},
+		"security.token":           {Name: "security.token", Limit: 20, Window: time.Minute},
 		"security.2fa_challenge":  {Name: "security.2fa_challenge", Limit: 6, Window: time.Minute},
-		"security.recovery_codes": {Name: "security.recovery_codes", Limit: 3, Window: 5 * time.Minute},
+		"security.recovery_codes":  {Name: "security.recovery_codes", Limit: 3, Window: 5 * time.Minute},
 	}}
 }
 
-func Load(paths ...string) (Config, error) {
-	cfg := DefaultConfig()
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return cfg, err
-		}
-		var parsed configFile
-		if err := yaml.Unmarshal(data, &parsed); err != nil {
-			return cfg, err
-		}
-		cfg = Merge(cfg, parsed.RateLimit)
-	}
-	return cfg, nil
-}
-
-func Merge(base Config, overlay Config) Config {
-	out := Config{Rules: map[string]Rule{}}
-	for name, rule := range base.Rules {
-		out.Rules[name] = rule
-	}
-	for name, rule := range overlay.Rules {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			name = strings.TrimSpace(rule.Name)
-		}
-		if name == "" {
-			continue
-		}
-		existing := out.Rules[name]
-		if rule.Limit == 0 {
-			rule.Limit = existing.Limit
-		}
-		if strings.TrimSpace(rule.RawWindow) == "" {
-			rule.RawWindow = existing.RawWindow
-			rule.Window = existing.Window
-		}
-		rule.Name = name
-		out.Rules[name] = rule
-	}
-	return out
-}
-
-func (l *Limiter) Allow(ruleName, key string) bool {
+func (l *MemoryLimiter) Allow(ctx context.Context, ruleName, key string) (bool, error) {
 	if l == nil {
-		return true
+		return true, nil
 	}
 	rule, ok := l.rules[strings.TrimSpace(ruleName)]
 	if !ok {
-		return true
+		return true, nil
 	}
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -145,17 +96,40 @@ func (l *Limiter) Allow(ruleName, key string) bool {
 	if current.ExpiresAt.IsZero() || !now.Before(current.ExpiresAt) {
 		l.hits[cacheKey] = entry{Count: 1, ExpiresAt: now.Add(rule.Window)}
 		l.gcLocked(now)
-		return true
+		return true, nil
 	}
 	if current.Count >= rule.Limit {
-		return false
+		return false, nil
 	}
 	current.Count++
 	l.hits[cacheKey] = current
-	return true
+	return true, nil
 }
 
-func (l *Limiter) gcLocked(now time.Time) {
+func (l *MemoryLimiter) Reset(ctx context.Context, ruleName, key string) error {
+	if l == nil {
+		return nil
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "anonymous"
+	}
+	ruleName = strings.TrimSpace(ruleName)
+	if ruleName == "" {
+		return nil
+	}
+	cacheKey := ruleName + ":" + key
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.hits, cacheKey)
+	return nil
+}
+
+func (l *MemoryLimiter) Close() error {
+	return nil
+}
+
+func (l *MemoryLimiter) gcLocked(now time.Time) {
 	for key, current := range l.hits {
 		if !current.ExpiresAt.IsZero() && now.After(current.ExpiresAt.Add(time.Minute)) {
 			delete(l.hits, key)
@@ -166,10 +140,11 @@ func (l *Limiter) gcLocked(now time.Time) {
 func ClientKey(r *http.Request, discriminator string) string {
 	parts := []string{}
 	if r != nil {
-		host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-		if err != nil || host == "" {
-			host = strings.TrimSpace(r.RemoteAddr)
+		host, _, err := strings.Cut(r.RemoteAddr, ":")
+		if err != nil {
+			host = r.RemoteAddr
 		}
+		host = strings.TrimSpace(host)
 		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
 			host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
 		}

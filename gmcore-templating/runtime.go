@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -101,6 +102,270 @@ func init() {
 		left, leftOK := numericValue(value)
 		right, rightOK := numericValue(args[0])
 		return leftOK && rightOK && right != 0 && int(left)%int(right) == 0
+	})
+	RegisterFilter("batch", func(value interface{}, args ...interface{}) interface{} {
+		items := toSlice(value)
+		if len(items) == 0 {
+			return [][]interface{}{}
+		}
+		size := 1
+		fill := ""
+		if len(args) >= 1 {
+			if n, ok := numericValue(args[0]); ok {
+				size = int(n)
+			}
+		}
+		if len(args) >= 2 {
+			fill = fmt.Sprint(args[1])
+		}
+		if size <= 0 {
+			size = 1
+		}
+		result := make([][]interface{}, 0)
+		for i := 0; i < len(items); i += size {
+			end := i + size
+			if end > len(items) {
+				end = len(items)
+			}
+			row := items[i:end]
+			for len(row) < size {
+				row = append(row, fill)
+			}
+			result = append(result, row)
+		}
+		return result
+	})
+	RegisterFilter("slice", func(value interface{}, args ...interface{}) interface{} {
+		start := 0
+		length := 0
+		if len(args) >= 1 {
+			if n, ok := numericValue(args[0]); ok {
+				start = int(n)
+			}
+		}
+		if len(args) >= 2 {
+			if n, ok := numericValue(args[1]); ok {
+				length = int(n)
+			}
+		}
+		switch v := value.(type) {
+		case string:
+			rs := []rune(v)
+			if start < 0 {
+				start = len(rs) + start
+			}
+			if start < 0 {
+				start = 0
+			}
+			if start > len(rs) {
+				return ""
+			}
+			if length <= 0 {
+				return string(rs[start:])
+			}
+			end := start + length
+			if end > len(rs) {
+				end = len(rs)
+			}
+			return string(rs[start:end])
+		}
+		items := toSlice(value)
+		if start < 0 {
+			start = len(items) + start
+		}
+		if start < 0 {
+			start = 0
+		}
+		if start > len(items) {
+			return []interface{}{}
+		}
+		if length <= 0 {
+			return items[start:]
+		}
+		end := start + length
+		if end > len(items) {
+			end = len(items)
+		}
+		return items[start:end]
+	})
+	RegisterFilter("column", func(value interface{}, args ...interface{}) interface{} {
+		items := toSlice(value)
+		if len(items) == 0 {
+			return []interface{}{}
+		}
+		if len(args) == 0 {
+			return items
+		}
+		key := fmt.Sprint(args[0])
+		result := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			rv := reflect.ValueOf(item)
+			for rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer {
+				if rv.IsNil() {
+					break
+				}
+				rv = rv.Elem()
+			}
+			if rv.Kind() != reflect.Map && rv.Kind() != reflect.Struct {
+				continue
+			}
+			var fieldValue interface{}
+			if rv.Kind() == reflect.Map {
+				for _, mapKey := range rv.MapKeys() {
+					if fmt.Sprint(mapKey.Interface()) == key {
+						fieldValue = rv.MapIndex(mapKey).Interface()
+						break
+					}
+				}
+			} else {
+				field := rv.FieldByNameFunc(func(candidate string) bool {
+					return strings.EqualFold(candidate, key)
+				})
+				if field.IsValid() {
+					fieldValue = field.Interface()
+				}
+			}
+			result = append(result, fieldValue)
+		}
+		return result
+	})
+	RegisterFilter("map", func(value interface{}, args ...interface{}) interface{} {
+		items := toSlice(value)
+		if len(items) == 0 {
+			return []interface{}{}
+		}
+		if len(args) == 0 {
+			return items
+		}
+		key := fmt.Sprint(args[0])
+		result := make([]interface{}, 0, len(items))
+		for _, item := range items {
+			rv := reflect.ValueOf(item)
+			for rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer {
+				if rv.IsNil() {
+					break
+				}
+				rv = rv.Elem()
+			}
+			var fieldValue interface{}
+			if rv.Kind() == reflect.Map {
+				for _, mapKey := range rv.MapKeys() {
+					if fmt.Sprint(mapKey.Interface()) == key {
+						fieldValue = rv.MapIndex(mapKey).Interface()
+						break
+					}
+				}
+			} else if rv.Kind() == reflect.Struct {
+				field := rv.FieldByNameFunc(func(candidate string) bool {
+					return strings.EqualFold(candidate, key)
+				})
+				if field.IsValid() {
+					fieldValue = field.Interface()
+				}
+			}
+			result = append(result, fieldValue)
+		}
+		return result
+	})
+	RegisterFilter("keys", func(value interface{}, _ ...interface{}) interface{} {
+		rv := reflect.ValueOf(value)
+		for rv.Kind() == reflect.Interface || rv.Kind() == reflect.Pointer {
+			if rv.IsNil() {
+				return []interface{}{}
+			}
+			rv = rv.Elem()
+		}
+		if rv.Kind() != reflect.Map {
+			return []interface{}{}
+		}
+		keys := rv.MapKeys()
+		result := make([]interface{}, 0, len(keys))
+		for _, key := range keys {
+			result = append(result, key.Interface())
+		}
+		return result
+	})
+	RegisterFilter("reverse", func(value interface{}, _ ...interface{}) interface{} {
+		items := toSlice(value)
+		result := make([]interface{}, len(items))
+		for i, item := range items {
+			result[len(items)-1-i] = item
+		}
+		return result
+	})
+	RegisterFilter("sort", func(value interface{}, _ ...interface{}) interface{} {
+		items := toSlice(value)
+		sort.SliceStable(items, func(i, j int) bool {
+			return fmt.Sprint(items[i]) < fmt.Sprint(items[j])
+		})
+		return items
+	})
+	RegisterFilter("first", func(value interface{}, _ ...interface{}) interface{} {
+		items := toSlice(value)
+		if len(items) == 0 {
+			return nil
+		}
+		return items[0]
+	})
+	RegisterFilter("last", func(value interface{}, _ ...interface{}) interface{} {
+		items := toSlice(value)
+		if len(items) == 0 {
+			return nil
+		}
+		return items[len(items)-1]
+	})
+	RegisterFilter("striptags", func(value interface{}, _ ...interface{}) interface{} {
+		re := regexp.MustCompile(`<[^>]*>`)
+		return re.ReplaceAllString(fmt.Sprint(value), "")
+	})
+	RegisterFilter("nl2br", func(value interface{}, _ ...interface{}) interface{} {
+		return strings.ReplaceAll(fmt.Sprint(value), "\n", "<br>")
+	})
+	RegisterFilter("escape", func(value interface{}, _ ...interface{}) interface{} {
+		return template.HTMLEscapeString(fmt.Sprint(value))
+	})
+	RegisterFilter("raw", func(value interface{}, _ ...interface{}) interface{} {
+		return template.HTML(fmt.Sprint(value))
+	})
+	RegisterTest("defined", func(value interface{}, _ ...interface{}) bool {
+		return value != nil
+	})
+	RegisterTest("empty", func(value interface{}, _ ...interface{}) bool {
+		return isEmptyValue(value)
+	})
+	RegisterTest("null", func(value interface{}, _ ...interface{}) bool {
+		return value == nil
+	})
+	RegisterTest("sameas", func(value interface{}, args ...interface{}) bool {
+		if len(args) == 0 {
+			return false
+		}
+		if value == nil && args[0] == nil {
+			return true
+		}
+		if value == nil || args[0] == nil {
+			return false
+		}
+		rv := reflect.ValueOf(value)
+		ra := reflect.ValueOf(args[0])
+		if rv.Type() != ra.Type() {
+			return false
+		}
+		switch rv.Kind() {
+		case reflect.Bool:
+			return rv.Bool() == ra.Bool()
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return rv.Int() == ra.Int()
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return rv.Uint() == ra.Uint()
+		case reflect.Float32, reflect.Float64:
+			return rv.Float() == ra.Float()
+		case reflect.String:
+			return rv.String() == ra.String()
+		case reflect.Ptr, reflect.Interface:
+			return rv.Interface() == ra.Interface()
+		}
+		return false
 	})
 }
 
