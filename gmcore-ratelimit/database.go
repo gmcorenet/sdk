@@ -211,12 +211,12 @@ func NewMySQLLimiter(cfg MySQLConfig, rules map[string]Rule) (*MySQLLimiter, err
 func (l *MySQLLimiter) ensureSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS gmcore_ratelimit (
-		\`key\` VARCHAR(255) NOT NULL,
+		gmcore_key VARCHAR(255) NOT NULL,
 		rule_name VARCHAR(255) NOT NULL,
 		counter INT NOT NULL DEFAULT 0,
 		window_start TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		expires_at TIMESTAMP NOT NULL,
-		PRIMARY KEY (\`key\`, rule_name),
+		PRIMARY KEY (gmcore_key, rule_name),
 		INDEX idx_expires (expires_at)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
@@ -242,7 +242,7 @@ func (l *MySQLLimiter) Allow(ctx context.Context, ruleName, key string) (bool, e
 
 	var currentCount int
 	err := l.db.QueryRowContext(ctx,
-		`SELECT counter FROM gmcore_ratelimit WHERE \`key\` = ? AND rule_name = ? AND window_start > ?`,
+		`SELECT counter FROM gmcore_ratelimit WHERE gmcore_key = ? AND rule_name = ? AND window_start > ?`,
 		key, ruleName, windowStart,
 	).Scan(&currentCount)
 
@@ -255,7 +255,7 @@ func (l *MySQLLimiter) Allow(ctx context.Context, ruleName, key string) (bool, e
 	}
 
 	_, err = l.db.ExecContext(ctx,
-		`INSERT INTO gmcore_ratelimit (\`key\`, rule_name, counter, window_start, expires_at)
+		`INSERT INTO gmcore_ratelimit (gmcore_key, rule_name, counter, window_start, expires_at)
 		VALUES (?, ?, 1, NOW(), ?)
 		ON DUPLICATE KEY UPDATE
 			counter = gmcore_ratelimit.counter + 1,
@@ -283,7 +283,7 @@ func (l *MySQLLimiter) Reset(ctx context.Context, ruleName, key string) error {
 		return nil
 	}
 	_, err := l.db.ExecContext(ctx,
-		`DELETE FROM gmcore_ratelimit WHERE \`key\` = ? AND rule_name = ?`,
+		`DELETE FROM gmcore_ratelimit WHERE gmcore_key = ? AND rule_name = ?`,
 		key, ruleName,
 	)
 	return err

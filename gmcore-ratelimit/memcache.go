@@ -2,7 +2,6 @@ package gmcoreratelimit
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -10,18 +9,20 @@ import (
 )
 
 type MemcacheConfig struct {
-	Addr     string
-	Password string
-	Timeout  time.Duration
+	Addr    string
+	Timeout time.Duration
 }
 
 type MemcacheLimiter struct {
-	client *memcacheGoClient
+	client *memcache.Client
 	rules  map[string]Rule
 }
 
 func NewMemcacheLimiter(cfg MemcacheConfig, rules map[string]Rule) (*MemcacheLimiter, error) {
-	client := newMemcacheClient(cfg)
+	client := memcache.New(cfg.Addr)
+	if cfg.Timeout > 0 {
+		client.Timeout = cfg.Timeout
+	}
 	normalizedRules := map[string]Rule{}
 	for name, rule := range rules {
 		normalized := strings.TrimSpace(name)
@@ -63,12 +64,12 @@ func (l *MemcacheLimiter) Allow(ctx context.Context, ruleName, key string) (bool
 	cacheKey := "rl:" + rule.Name + ":" + key
 
 	current, err := l.client.Get(cacheKey)
-	if err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+	if err != nil && err != memcache.ErrCacheMiss {
 		return true, nil
 	}
 
 	count := 0
-	if current != nil {
+	if current != nil && len(current.Value) > 0 {
 		count = int(current.Value[0])
 	}
 
@@ -78,11 +79,8 @@ func (l *MemcacheLimiter) Allow(ctx context.Context, ruleName, key string) (bool
 
 	count++
 	expiration := int32(rule.Window.Seconds())
-	if current != nil {
-		l.client.Set(&memcache.Item{Key: cacheKey, Value: []byte{byte(count)}, Expiration: expiration})
-	} else {
-		l.client.Set(&memcache.Item{Key: cacheKey, Value: []byte{byte(count)}, Expiration: expiration})
-	}
+	item := &memcache.Item{Key: cacheKey, Value: []byte{byte(count)}, Expiration: expiration}
+	l.client.Set(item)
 
 	return true, nil
 }
@@ -105,16 +103,4 @@ func (l *MemcacheLimiter) Reset(ctx context.Context, ruleName, key string) error
 
 func (l *MemcacheLimiter) Close() error {
 	return nil
-}
-
-type memcacheGoClient struct {
-	client *memcache.Client
-}
-
-func newMemcacheClient(cfg MemcacheConfig) *memcacheGoClient {
-	client := memcache.New(cfg.Addr)
-	if cfg.Timeout > 0 {
-		client.Timeout = cfg.Timeout
-	}
-	return &memcacheGoClient{client: client}
 }

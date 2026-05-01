@@ -140,11 +140,11 @@ func (l *MemoryLimiter) gcLocked(now time.Time) {
 func ClientKey(r *http.Request, discriminator string) string {
 	parts := []string{}
 	if r != nil {
-		host, _, err := strings.Cut(r.RemoteAddr, ":")
-		if err != nil {
+		host, _, _ := strings.Cut(r.RemoteAddr, ":")
+		host = strings.TrimSpace(host)
+		if host == "" {
 			host = r.RemoteAddr
 		}
-		host = strings.TrimSpace(host)
 		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
 			host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
 		}

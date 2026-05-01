@@ -132,7 +132,7 @@ func (c *redisGoClient) Allow(ctx context.Context, key string, limit int, window
 
 	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(windowStart, 10))
 	countCmd := pipe.ZCard(ctx, key)
-	pipe.ZAdd(ctx, key, &redis.Z{Score: float64(now), Member: now})
+	pipe.ZAdd(ctx, key, redis.Z{Score: float64(now), Member: now})
 
 	pipe.Expire(ctx, key, window)
 
