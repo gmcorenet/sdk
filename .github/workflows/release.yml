@@ -47,25 +47,25 @@ jobs:
           go 1.21
 
           require (
-          	gmcore.io/gmcore-config vVERSION
-          	gmcore.io/gmcore-crud vVERSION
-          	gmcore.io/gmcore-encryption vVERSION
-          	gmcore.io/gmcore-events vVERSION
-          	gmcore.io/gmcore-router vVERSION
-          	gmcore.io/gmcore-settings vVERSION
-          	gmcore.io/gmcore-store vVERSION
-          	gmcore.io/gmcore-uuid vVERSION
+          	gmcore.net/gmcore-config vVERSION
+          	gmcore.net/gmcore-crud vVERSION
+          	gmcore.net/gmcore-encryption vVERSION
+          	gmcore.net/gmcore-events vVERSION
+          	gmcore.net/gmcore-router vVERSION
+          	gmcore.net/gmcore-settings vVERSION
+          	gmcore.net/gmcore-store vVERSION
+          	gmcore.net/gmcore-uuid vVERSION
           )
 
           replace (
-          	gmcore.io/gmcore-config => ./vendor/gmcore/gmcore-config
-          	gmcore.io/gmcore-crud => ./vendor/gmcore/gmcore-crud
-          	gmcore.io/gmcore-encryption => ./vendor/gmcore/gmcore-encryption
-          	gmcore.io/gmcore-events => ./vendor/gmcore/gmcore-events
-          	gmcore.io/gmcore-router => ./vendor/gmcore/gmcore-router
-          	gmcore.io/gmcore-settings => ./vendor/gmcore/gmcore-settings
-          	gmcore.io/gmcore-store => ./vendor/gmcore/gmcore-store
-          	gmcore.io/gmcore-uuid => ./vendor/gmcore/gmcore-uuid
+          	gmcore.net/gmcore-config => ./vendor/gmcore/gmcore-config
+          	gmcore.net/gmcore-crud => ./vendor/gmcore/gmcore-crud
+          	gmcore.net/gmcore-encryption => ./vendor/gmcore/gmcore-encryption
+          	gmcore.net/gmcore-events => ./vendor/gmcore/gmcore-events
+          	gmcore.net/gmcore-router => ./vendor/gmcore/gmcore-router
+          	gmcore.net/gmcore-settings => ./vendor/gmcore/gmcore-settings
+          	gmcore.net/gmcore-store => ./vendor/gmcore/gmcore-store
+          	gmcore.net/gmcore-uuid => ./vendor/gmcore/gmcore-uuid
           )
           GOMODEOF
           sed -i "s/vVERSION/v${VERSION}/g" "$FRAMEWORK/go.mod"
