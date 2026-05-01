@@ -5,12 +5,14 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Go
@@ -18,11 +20,12 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Get SDK packages
+      - name: Create directories
         run: |
           mkdir -p vendor/gmcore
-          for dir in gmcore-*; do
+          for dir in gmcore-*/; do
             if [ -d "$dir" ] && [ -f "$dir/go.mod" ]; then
+              rm -rf "vendor/gmcore/$(basename $dir)"
               cp -r "$dir" vendor/gmcore/
             fi
           done
@@ -30,31 +33,28 @@ jobs:
       - name: Create framework structure
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          FRAMEWORK_DIR="gmcore-framework-${VERSION}"
+          FRAMEWORK="gmcore-framework-${VERSION}"
+          mkdir -p "$FRAMEWORK"/{bin,cmd/app,config,public,var/{cache,log,tmp},src,tests,migrations,templates,vendor/gmcore}
+          cp -r vendor/gmcore/* "$FRAMEWORK/vendor/gmcore/"
 
-          mkdir -p "$FRAMEWORK_DIR"/{bin,cmd/app,config,public,var/{cache,log,tmp},src,tests,migrations,templates,vendor/gmcore}
-
-          cp -r vendor/gmcore/* "$FRAMEWORK_DIR/vendor/gmcore/"
-
-      - name: Create go.mod for framework
+      - name: Create go.mod
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          FRAMEWORK_DIR="gmcore-framework-${VERSION}"
-
-          cat > "$FRAMEWORK_DIR/go.mod" << EOF
+          FRAMEWORK="gmcore-framework-${VERSION}"
+          cat > "$FRAMEWORK/go.mod" << 'GOMODEOF'
           module github.com/gmcore/app
 
           go 1.21
 
           require (
-          	gmcore.io/gmcore-config v${VERSION}
-          	gmcore.io/gmcore-crud v${VERSION}
-          	gmcore.io/gmcore-encryption v${VERSION}
-          	gmcore.io/gmcore-events v${VERSION}
-          	gmcore.io/gmcore-router v${VERSION}
-          	gmcore.io/gmcore-settings v${VERSION}
-          	gmcore.io/gmcore-store v${VERSION}
-          	gmcore.io/gmcore-uuid v${VERSION}
+          	gmcore.io/gmcore-config vVERSION
+          	gmcore.io/gmcore-crud vVERSION
+          	gmcore.io/gmcore-encryption vVERSION
+          	gmcore.io/gmcore-events vVERSION
+          	gmcore.io/gmcore-router vVERSION
+          	gmcore.io/gmcore-settings vVERSION
+          	gmcore.io/gmcore-store vVERSION
+          	gmcore.io/gmcore-uuid vVERSION
           )
 
           replace (
@@ -67,32 +67,18 @@ jobs:
           	gmcore.io/gmcore-store => ./vendor/gmcore/gmcore-store
           	gmcore.io/gmcore-uuid => ./vendor/gmcore/gmcore-uuid
           )
-          EOF
+          GOMODEOF
+          sed -i "s/vVERSION/v${VERSION}/g" "$FRAMEWORK/go.mod"
 
-      - name: Run go mod tidy
+      - name: Build tarball
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          FRAMEWORK_DIR="gmcore-framework-${VERSION}"
-          cd "$FRAMEWORK_DIR"
-          go mod tidy
+          FRAMEWORK="gmcore-framework-${VERSION}"
+          tar -czf "gmcore-framework-${VERSION}.tar.gz" "$FRAMEWORK"
 
-      - name: Create tarball
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          FRAMEWORK_DIR="gmcore-framework-${VERSION}"
-          tar -czf "gmcore-framework-${VERSION}.tar.gz" "$FRAMEWORK_DIR"
-
-      - name: Compute SHA256
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          sha256sum "gmcore-framework-${VERSION}.tar.gz" | awk '{print $1}' > "gmcore-framework-${VERSION}.tar.gz.sha256"
-
-      - name: Create Release
+      - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            gmcore-framework-*.tar.gz
-            gmcore-framework-*.sha256
-          generate_release_notes: true
+          files: gmcore-framework-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
