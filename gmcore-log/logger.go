@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Level int
@@ -154,35 +156,35 @@ func NewConsoleHandler(w io.Writer) *ConsoleHandler {
 }
 
 func (h *ConsoleHandler) Handle(e Entry) {
-	h.Format.FormatEntry(e, h.Writer)
+	fmt.Fprintln(h.Writer, h.Format.FormatString(e))
 }
 
 type Format interface {
-	FormatEntry(Entry, io.Writer)
+	FormatString(Entry) string
 }
 
 type TextFormat struct{}
 
-func (f TextFormat) FormatEntry(e Entry, w io.Writer) {
-	fmt.Fprintf(w, "%s [%s] %s", e.Time.Format(time.RFC3339), e.Level.String(), e.Message)
+func (f TextFormat) FormatString(e Entry) string {
+	msg := fmt.Sprintf("%s [%s] %s", e.Time.Format(time.RFC3339), e.Level.String(), e.Message)
 	if len(e.Fields) > 0 {
-		fmt.Fprint(w, " {")
+		msg += " {"
 		first := true
 		for k, v := range e.Fields {
 			if !first {
-				fmt.Fprint(w, ", ")
+				msg += ", "
 			}
-			fmt.Fprintf(w, "%s=%v", k, v)
+			msg += fmt.Sprintf("%s=%v", k, v)
 			first = false
 		}
-		fmt.Fprint(w, "}")
+		msg += "}"
 	}
-	fmt.Fprintln(w)
+	return msg
 }
 
 type JSONFormat struct{}
 
-func (f JSONFormat) FormatEntry(e Entry, w io.Writer) {
+func (f JSONFormat) FormatString(e Entry) string {
 	m := map[string]interface{}{
 		"time":    e.Time.Format(time.RFC3339),
 		"level":   e.Level.String(),
@@ -192,8 +194,7 @@ func (f JSONFormat) FormatEntry(e Entry, w io.Writer) {
 		m[k] = v
 	}
 	b, _ := json.Marshal(m)
-	w.Write(b)
-	fmt.Fprintln(w)
+	return string(b)
 }
 
 type FileHandler struct {
@@ -206,11 +207,11 @@ type FileHandler struct {
 func NewFileHandler(filename string) (*FileHandler, error) {
 	dir := filepath.Dir(filename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, err
+		return nil, gmerr.Wrap(err, gmerr.CodeConfiguration, "failed to create log directory")
 	}
 	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, err
+		return nil, gmerr.Wrap(err, gmerr.CodeIO, "failed to open log file")
 	}
 	return &FileHandler{
 		Filename: filename,
@@ -222,7 +223,9 @@ func NewFileHandler(filename string) (*FileHandler, error) {
 func (h *FileHandler) Handle(e Entry) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.Format.FormatEntry(e, h.file)
+	if _, err := h.file.WriteString(h.Format.FormatString(e) + "\n"); err != nil {
+		fmt.Fprintf(os.Stderr, "log: failed to write: %v\n", err)
+	}
 }
 
 func (h *FileHandler) Close() error {
@@ -271,7 +274,9 @@ func (h *RotatingFileHandler) Handle(e Entry) {
 		h.rotate()
 	}
 
-	h.Format.FormatEntry(e, h.file)
+	if _, err := h.file.WriteString(h.Format.FormatString(e) + "\n"); err != nil {
+		fmt.Fprintf(os.Stderr, "log: failed to write: %v\n", err)
+	}
 	h.currentSize += entryLen
 }
 

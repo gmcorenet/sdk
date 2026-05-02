@@ -19,6 +19,7 @@ const (
 	CodeTimeout
 	CodeNotImplemented
 	CodeConfiguration
+	CodeIO
 )
 
 type GmcoreError struct {
