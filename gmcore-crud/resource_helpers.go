@@ -44,7 +44,7 @@ func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Defi
 			Name:        field.Name,
 			Label:       field.Label,
 			LabelKey:    field.LabelKey,
-			Type:        field.Type,
+			Type:        toInputType(field.Type),
 			Widget:      defaultWidgetForField(field),
 			Required:    field.Required,
 			Placeholder: field.Placeholder,
@@ -54,19 +54,21 @@ func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Defi
 			AutoManaged: isAutoManagedField(field.Name),
 		}
 		if relation, ok := RelationByName(cfg.Relations, field.Relation); ok {
-			formField.AsyncOptions = relation.Async
-			formField.AsyncLimit = relation.AsyncLimit
-			formField.AsyncDebounce = relation.AsyncDebounce
-			formField.LoadAllLimit = relation.LoadAllLimit
 			formField.ValueField = relation.ValueField
 			formField.DisplayField = relation.DisplayField
+			if relation.Async {
+				formField.OptionRemote = &gmcoreform.RemoteOptions{
+					Delay:         relation.AsyncDebounce,
+					MinInputLength: relation.AsyncLimit,
+				}
+			}
 			if relation.Widget != "" {
-				formField.Widget = relation.Widget
+				formField.Widget = gmcoreform.WidgetType(relation.Widget)
 			}
 			if relation.Type == RelationHasMany || relation.Type == RelationManyToMany {
 				formField.Multiple = true
 				if relation.Widget == "" {
-					formField.Widget = "multiselect"
+					formField.Widget = gmcoreform.WidgetSelect
 				}
 			}
 		}
@@ -105,10 +107,7 @@ func ApplyLayoutMeta(form gmcoreform.Definition, meta LayoutMeta) gmcoreform.Def
 			field.ColSpan = current.ColSpan
 		}
 		if current.Widget != "" {
-			field.Widget = current.Widget
-		}
-		if current.Height > 0 {
-			field.Height = current.Height
+			field.Widget = gmcoreform.WidgetType(current.Widget)
 		}
 		if current.Validation != nil {
 			field.Validation = append([]string(nil), current.Validation...)
@@ -182,22 +181,57 @@ func ExportRecords(w http.ResponseWriter, resourceName string, cfg Config, actio
 	}
 }
 
-func defaultWidgetForField(field Field) string {
+func defaultWidgetForField(field Field) gmcoreform.WidgetType {
 	switch field.Type {
 	case "email":
-		return "email"
+		return gmcoreform.WidgetText
 	case "password", "password_hash":
-		return "password"
+		return gmcoreform.WidgetText
 	case "datetime":
-		return "datetime-local"
+		return gmcoreform.WidgetDateTimePicker
 	case "date":
-		return "date"
+		return gmcoreform.WidgetDatePicker
 	case "int", "integer", "float", "number":
-		return "number"
+		return gmcoreform.WidgetText
 	case "json", "array":
-		return "textarea"
+		return gmcoreform.WidgetTextarea
 	default:
-		return "text"
+		return gmcoreform.WidgetText
+	}
+}
+
+func toInputType(t string) gmcoreform.InputType {
+	switch t {
+	case "email":
+		return gmcoreform.TypeEmail
+	case "password":
+		return gmcoreform.TypePassword
+	case "datetime":
+		return gmcoreform.TypeDateTime
+	case "date":
+		return gmcoreform.TypeDate
+	case "time":
+		return gmcoreform.TypeTime
+	case "int", "integer":
+		return gmcoreform.TypeInteger
+	case "float", "decimal", "number":
+		return gmcoreform.TypeDecimal
+	case "bool", "boolean":
+		return gmcoreform.TypeBoolean
+	case "text", "string":
+		return gmcoreform.TypeText
+	case "textarea":
+		return gmcoreform.TypeTextarea
+	case "html":
+		return gmcoreform.TypeHtml
+	case "json":
+		return gmcoreform.TypeJson
+	case "uuid":
+		return gmcoreform.TypeUuid
+	case "select":
+		return gmcoreform.TypeSelect
+	default:
+		return gmcoreform.TypeText
 	}
 }
 

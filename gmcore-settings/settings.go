@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Setting struct {

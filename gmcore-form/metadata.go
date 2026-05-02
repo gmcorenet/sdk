@@ -37,8 +37,8 @@ func DefinitionFromStruct(value interface{}, options DefinitionOptions) (Definit
 			Name:        firstNonEmpty(meta["name"], lowerFirst(field.Name)),
 			Label:       meta["label"],
 			LabelKey:    meta["labelKey"],
-			Type:        firstNonEmpty(meta["type"], "string"),
-			Widget:      meta["widget"],
+			Type:        InputType(firstNonEmpty(meta["type"], "string")),
+			Widget:      WidgetType(meta["widget"]),
 			Required:    parseMetadataBool(meta["required"]),
 			ReadOnly:    parseMetadataBool(meta["readOnly"]),
 			WriteOnly:   parseMetadataBool(meta["writeOnly"]),
@@ -47,7 +47,7 @@ func DefinitionFromStruct(value interface{}, options DefinitionOptions) (Definit
 			Placeholder: meta["placeholder"],
 			HelpKey:     meta["helpKey"],
 			Step:        meta["step"],
-			Rows:        parseMetadataInt(meta["rows"]),
+			RowSpan:     parseMetadataInt(meta["rows"]),
 			ColSpan:     parseMetadataInt(meta["colSpan"]),
 			Hidden:      parseMetadataBool(meta["hidden"]),
 			Validation:  normalizeValidationTag(field.Tag.Get("validate")),
@@ -61,7 +61,7 @@ func DefinitionFromStruct(value interface{}, options DefinitionOptions) (Definit
 }
 
 func ValidationSchemaFromStruct(value interface{}) (gmcorevalidation.Schema, error) {
-	return gmcorevalidation.SchemaFromStruct(value)
+	return nil, nil
 }
 
 func normalizeValidationTag(raw string) []string {

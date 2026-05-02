@@ -8,6 +8,8 @@ import (
 	"errors"
 	"io"
 	"strings"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Service struct {

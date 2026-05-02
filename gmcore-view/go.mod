@@ -1,22 +1,13 @@
-module gmcore-view
+module github.com/gmcorenet/sdk/gmcore-view
 
-go 1.19
-
-require (
-	gmcore-i18n v0.0.0
-	gmcore-resolver v0.0.0
-	gmcore-templating v0.0.0
-)
+go 1.21
 
 require (
-	gmcore-debugbar v0.0.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
+	github.com/gmcorenet/sdk/gmcore-view v0.0.0
+	github.com/gmcorenet/gmcore-error v0.1.0
 )
 
-replace gmcore-debugbar => ../gmcore-debugbar
-
-replace gmcore-i18n => ../gmcore-i18n
-
-replace gmcore-resolver => ../gmcore-resolver
-
-replace gmcore-templating => ../gmcore-templating
+replace (
+	github.com/gmcorenet/sdk/gmcore-view => .
+	github.com/gmcorenet/gmcore-error => ../gmcore-error
+)

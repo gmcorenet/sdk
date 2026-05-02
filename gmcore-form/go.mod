@@ -1,7 +1,13 @@
-module gmcore-form
+module github.com/gmcorenet/sdk/gmcore-form
 
-go 1.19
+go 1.21
 
-require gmcore-validation v0.0.0
+require (
+	github.com/gmcorenet/sdk/gmcore-form v0.0.0
+	github.com/gmcorenet/gmcore-error v0.1.0
+)
 
-replace gmcore-validation => ../gmcore-validation
+replace (
+	github.com/gmcorenet/sdk/gmcore-form => .
+	github.com/gmcorenet/gmcore-error => ../gmcore-error
+)

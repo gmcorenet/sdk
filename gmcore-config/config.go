@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Options struct {
@@ -19,13 +21,16 @@ type Options struct {
 func LoadYAML(path string, out interface{}, options Options) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return gmerr.Wrap(err, gmerr.CodeConfiguration, "failed to read config file: "+path)
 	}
 	rendered, err := ResolveString(string(data), withFileParameters(data, options))
 	if err != nil {
-		return err
+		return gmerr.Wrap(err, gmerr.CodeConfiguration, "failed to resolve config")
 	}
-	return yaml.Unmarshal([]byte(rendered), out)
+	if err := yaml.Unmarshal([]byte(rendered), out); err != nil {
+		return gmerr.Wrap(err, gmerr.CodeInvalidInput, "failed to parse YAML")
+	}
+	return nil
 }
 
 func ResolveString(content string, options Options) (string, error) {
@@ -34,14 +39,14 @@ func ResolveString(content string, options Options) (string, error) {
 		return value, ok
 	})
 	if err != nil {
-		return "", err
+		return "", gmerr.Wrap(err, gmerr.CodeConfiguration, "failed to resolve env variables")
 	}
 	resolved, err = resolveToken(resolved, "%parameter.", "%", options.Strict, func(key string) (string, bool) {
 		value, ok := options.Parameters[strings.TrimSpace(key)]
 		return value, ok
 	})
 	if err != nil {
-		return "", err
+		return "", gmerr.Wrap(err, gmerr.CodeConfiguration, "failed to resolve parameters")
 	}
 	return resolved, nil
 }
@@ -149,7 +154,7 @@ func resolveToken(content, prefix, suffix string, strict bool, lookup func(strin
 		key := strings.TrimSpace(content[start+len(prefix) : tokenEnd])
 		value, ok := lookup(key)
 		if !ok && strict {
-			return "", fmt.Errorf("missing config placeholder %s%s%s", prefix, key, suffix)
+			return "", gmerr.New(gmerr.CodeConfiguration, "missing config placeholder: "+prefix+key+suffix)
 		}
 		content = content[:start] + value + content[tokenEnd+len(suffix):]
 	}

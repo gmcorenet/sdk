@@ -1,19 +1,16 @@
-module gmcore-seed
+module github.com/gmcorenet/sdk/gmcore-seed
 
-go 1.19
-
-require (
-	gmcore-uuid v0.0.0
-	gorm.io/driver/sqlite v1.6.0
-	gorm.io/gorm v1.30.0
-)
+go 1.21
 
 require (
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	github.com/gmcorenet/sdk/gmcore-seed v0.0.0
+	github.com/gmcorenet/sdk/gmcore-uuid v0.0.0
+	gorm.io/gorm v1.25.10
+	github.com/gmcorenet/gmcore-error v0.1.0
 )
 
-replace gmcore-uuid => ../gmcore-uuid
+replace (
+	github.com/gmcorenet/sdk/gmcore-seed => .
+	github.com/gmcorenet/sdk/gmcore-uuid => ../gmcore-uuid
+	github.com/gmcorenet/gmcore-error => ../gmcore-error
+)

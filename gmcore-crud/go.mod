@@ -1,28 +1,22 @@
-module gmcore-crud
+module github.com/gmcorenet/sdk/gmcore-crud
 
-go 1.19
+go 1.21
 
 require (
-	gmcore-form v0.0.0
-	gmcore-settings v0.0.0
-	gmcore-uuid v0.0.0
+	github.com/gmcorenet/sdk/gmcore-crud v0.0.0
+	github.com/gmcorenet/sdk/gmcore-form v0.0.0
+	github.com/gmcorenet/sdk/gmcore-settings v0.0.0
+	github.com/gmcorenet/sdk/gmcore-uuid v0.0.0
+	github.com/gmcorenet/sdk/gmcore-validation v0.0.0
 	gorm.io/gorm v1.25.10
+	github.com/gmcorenet/gmcore-error v0.1.0
 )
 
-require (
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
-	gmcore-validation v0.0.0 // indirect
+replace (
+	github.com/gmcorenet/sdk/gmcore-crud => .
+	github.com/gmcorenet/sdk/gmcore-form => ../gmcore-form
+	github.com/gmcorenet/sdk/gmcore-settings => ../gmcore-settings
+	github.com/gmcorenet/sdk/gmcore-uuid => ../gmcore-uuid
+	github.com/gmcorenet/sdk/gmcore-validation => ../gmcore-validation
+	github.com/gmcorenet/gmcore-error => ../gmcore-error
 )
-
-replace gmcore-form => ../gmcore-form
-
-replace gmcore-debugbar => ../gmcore-debugbar
-
-replace gmcore-settings => ../gmcore-settings
-
-replace gmcore-uuid => ../gmcore-uuid
-
-replace gmcore-validation => ../gmcore-validation

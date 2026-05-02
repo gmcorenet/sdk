@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type PrimaryKeyType string

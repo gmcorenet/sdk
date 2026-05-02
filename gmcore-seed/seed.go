@@ -11,6 +11,8 @@ import (
 
 	gmcoreuuid "gmcore-uuid"
 	"gorm.io/gorm"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Options struct {

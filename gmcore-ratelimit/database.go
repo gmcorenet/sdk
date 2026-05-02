@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type PostgresConfig struct {

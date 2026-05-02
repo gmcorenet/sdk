@@ -1,14 +1,13 @@
-module gmcore-templating
+module github.com/gmcorenet/sdk/gmcore-templating
 
-go 1.19
+go 1.21
 
 require (
-	gmcore-debugbar v0.0.0
-	gmcore-resolver v0.0.0
+	github.com/gmcorenet/sdk/gmcore-templating v0.0.0
+	github.com/gmcorenet/gmcore-error v0.1.0
 )
 
-require gopkg.in/yaml.v3 v3.0.1 // indirect
-
-replace gmcore-debugbar => ../gmcore-debugbar
-
-replace gmcore-resolver => ../gmcore-resolver
+replace (
+	github.com/gmcorenet/sdk/gmcore-templating => .
+	github.com/gmcorenet/gmcore-error => ../gmcore-error
+)
