@@ -10,3 +10,5 @@ require (
 )
 
 replace github.com/gmcorenet/gmcore-error => ../gmcore-error
+
+replace github.com/gmcorenet/sdk/gmcore-uid => ../gmcore-uid
