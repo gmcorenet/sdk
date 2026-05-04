@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	gmcore_form "github.com/gmcorenet/sdk/gmcore-form"
+	gmcoreform "github.com/gmcorenet/sdk/gmcore-form"
 )
 
 type stubBackend struct{}
 
 func (stubBackend) Kind() BackendKind { return BackendArray }
+func (stubBackend) IndexQueryName() string { return "index" }
 func (stubBackend) List(context.Context, Config, ListParams) ([]Record, error) {
 	return nil, nil
 }
@@ -39,7 +40,7 @@ func TestNewRequiresPrimaryKeyNamedID(t *testing.T) {
 		PrimaryKey:     "uuid",
 		PrimaryKeyType: PrimaryKeyUUID,
 		Fields:         []Field{{Name: "uuid", Type: "uuid"}},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err == nil || !strings.Contains(err.Error(), "must be named id") {
 		t.Fatalf("expected primary key name validation error, got %v", err)
 	}
@@ -52,7 +53,7 @@ func TestNewRequiresPrimaryKeyFieldDefinition(t *testing.T) {
 		PrimaryKey:     "id",
 		PrimaryKeyType: PrimaryKeyUUID,
 		Fields:         []Field{{Name: "title", Type: "string"}},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err == nil || !strings.Contains(err.Error(), "must define the primary key field id") {
 		t.Fatalf("expected primary key field validation error, got %v", err)
 	}
@@ -65,7 +66,7 @@ func TestNewRequiresUUIDOrIntPrimaryKeyType(t *testing.T) {
 		PrimaryKey:     "id",
 		PrimaryKeyType: "string",
 		Fields:         []Field{{Name: "id", Type: "string"}},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err == nil || !strings.Contains(err.Error(), "must be uuid or int") {
 		t.Fatalf("expected primary key type validation error, got %v", err)
 	}
@@ -79,7 +80,7 @@ func TestNewAllowsUUIDOrIntIDPrimaryKey(t *testing.T) {
 			PrimaryKey:     "id",
 			PrimaryKeyType: pkType,
 			Fields:         []Field{{Name: "id", Type: "string"}, {Name: "title", Type: "string"}},
-		}, stubBackend{})
+		}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 		if err != nil {
 			t.Fatalf("expected %s primary key to be valid, got %v", pkType, err)
 		}
@@ -122,7 +123,7 @@ func TestParseListParamsRespectsExplicitSimpleFilterOperator(t *testing.T) {
 			{Name: "id", Type: "uuid", Filterable: true},
 			{Name: "title", Type: "string", Filterable: true},
 		},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err != nil {
 		t.Fatalf("unexpected error creating manager: %v", err)
 	}
@@ -158,7 +159,7 @@ func TestManagerDerivesQueryNameFromBackend(t *testing.T) {
 		PrimaryKey:     "id",
 		PrimaryKeyType: PrimaryKeyUUID,
 		Fields:         []Field{{Name: "id", Type: "uuid"}, {Name: "title", Type: "string"}},
-	}, queryNamedStubBackend{query: "notes_index"})
+	}, map[BackendKind]Backend{BackendArray: queryNamedStubBackend{query: "notes_index"}})
 	if err != nil {
 		t.Fatalf("unexpected error creating manager: %v", err)
 	}
@@ -177,7 +178,7 @@ func TestNewRequiresDisplayAndValueFieldsForRelations(t *testing.T) {
 		Relations: []Relation{
 			{Name: "owner", Type: RelationBelongsTo, LocalField: "owner", ValueField: "email"},
 		},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err == nil || !strings.Contains(err.Error(), "missing display field") {
 		t.Fatalf("expected missing display field error, got %v", err)
 	}
@@ -193,7 +194,7 @@ func TestManagerResolvesRelationByName(t *testing.T) {
 		Relations: []Relation{
 			{Name: "owner", Type: RelationBelongsTo, LocalField: "owner", ValueField: "email", DisplayField: "display_name"},
 		},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err != nil {
 		t.Fatalf("unexpected error creating manager: %v", err)
 	}
@@ -218,8 +219,8 @@ func TestEffectiveFormDefinitionUsesMultiselectForHasManyRelations(t *testing.T)
 		t.Fatalf("expected 2 fields, got %d", len(form.Fields))
 	}
 	watchers := form.Fields[1]
-	if watchers.Widget != "multiselect" {
-		t.Fatalf("expected multiselect widget for has_many relation, got %q", watchers.Widget)
+	if watchers.Widget != "select" {
+		t.Fatalf("expected select widget for has_many relation, got %q", watchers.Widget)
 	}
 	if !watchers.Multiple {
 		t.Fatalf("expected has_many relation to be marked multiple")
@@ -267,7 +268,7 @@ func TestResolveRowActionsSupportsCustomActionMetadataAndVisibility(t *testing.T
 			{Name: "impersonate", Label: "Impersonate", URLTemplate: "/impersonate/<id>", Target: "_self", Icon: "/assets/custom/impersonate.svg", Order: 1, Group: "account", SeparatorBefore: true, ConfirmText: "Impersonate user?", VisibleWhen: "status=active"},
 			{Name: "website", Label: "Website", URLTemplate: "https://example.test/u/<email>", Target: "_blank", Order: 2, SeparatorAfter: true},
 		},
-	}, stubBackend{})
+	}, map[BackendKind]Backend{BackendArray: stubBackend{}})
 	if err != nil {
 		t.Fatalf("unexpected manager error: %v", err)
 	}

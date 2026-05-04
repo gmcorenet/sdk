@@ -21,6 +21,31 @@ func csvEscapeField(value string) string {
 	return value
 }
 
+func formatCellValue(col IndexColumn, record Record) string {
+	if col.DisplayFormatter != nil {
+		return col.DisplayFormatter(record)
+	}
+	if record == nil {
+		return ""
+	}
+	val, ok := record[col.Field]
+	if !ok {
+		return ""
+	}
+	if val == nil {
+		return ""
+	}
+	if col.DisplayTemplate != "" {
+		result := col.DisplayTemplate
+		result = strings.ReplaceAll(result, "<row_value>", fmt.Sprintf("%v", val))
+		for k, v := range record {
+			result = strings.ReplaceAll(result, "{"+k+"}", fmt.Sprintf("%v", v))
+		}
+		return result
+	}
+	return fmt.Sprintf("%v", val)
+}
+
 type LayoutFieldMeta struct {
 	Name       string   `json:"name"`
 	Hidden     bool     `json:"hidden"`

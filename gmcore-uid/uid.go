@@ -1,10 +1,36 @@
 package gmcore_uid
 
+// Package gmcore_uid provides unique ID generation and validation utilities
+// including UUID, ULID, and NanoID.
+//
+// Examples:
+//
+//	// Generate UUID
+//	uuid, _ := NewUUID()
+//	fmt.Println(uuid.String()) // "550e8400-e29b-41d4-a716-446655440000"
+//
+//	// Generate ULID (time-sortable)
+//	ulid, _ := NewULID()
+//
+//	// Generate NanoID (URL-friendly, customizable length)
+//	nanoID, _ := NewNanoID(21)
+//
+//	// Validate UUID
+//	if IsValidUUID("550e8400-e29b-41d4-a716-446655440000") {
+//	    fmt.Println("Valid UUID!")
+//	}
+//
+//	// Factory for batch generation
+//	factory := NewFactory(16)
+//	id := factory.Make() // NanoID
+//	uuidStr := factory.MakeUUID()
+
 import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -29,7 +55,12 @@ func NewUUID() (UUID, error) {
 }
 
 func (u UUID) String() string {
-	return hex.EncodeToString(u[:])
+	return fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex.EncodeToString(u[0:4]),
+		hex.EncodeToString(u[4:6]),
+		hex.EncodeToString(u[6:8]),
+		hex.EncodeToString(u[8:10]),
+		hex.EncodeToString(u[10:16]))
 }
 
 func (u UUID) Bytes() []byte {
