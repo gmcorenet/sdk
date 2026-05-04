@@ -1,4 +1,4 @@
-package gmcoreratelimit
+package gmcore_ratelimit
 
 import (
 	"context"

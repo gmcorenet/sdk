@@ -1,29 +1,15 @@
-package gmcoresettings
+package gmcore_settings
 
 import (
 	"context"
-	"database/sql"
-	"errors"
+	"os"
 	"strings"
 	"sync"
-
-	_ "github.com/mattn/go-sqlite3"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
-type Setting struct {
-	Key         string
-	Value       string
-	Type        string
-	Description string
-	Editable    bool
-	Encrypted   bool
-}
-
 type Encryptor interface {
-	Encrypt(string) (string, error)
-	Decrypt(string) (string, error)
+	Encrypt(value string) (string, error)
+	Decrypt(value string) (string, error)
 }
 
 type Config struct {
@@ -31,194 +17,219 @@ type Config struct {
 	Encryptor Encryptor
 }
 
-type Store struct {
-	db    *sql.DB
+func OpenWithConfig(ctx context.Context, cfg Config) (Store, error) {
+	return &memoryStore{items: make(map[string]StoreItem)}, nil
+}
+
+type Setting struct {
+	Key   string
+	Value interface{}
+	Type  string
+}
+
+type Settings interface {
+	Get(key string) interface{}
+	Set(key string, value interface{})
+	Has(key string) bool
+	Remove(key string)
+	All() map[string]interface{}
+}
+
+type settings struct {
+	data map[string]interface{}
+	mu   sync.RWMutex
+}
+
+func New() *settings {
+	return &settings{data: make(map[string]interface{})}
+}
+
+func (s *settings) Get(key string) interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.data[key]
+}
+
+func (s *settings) Set(key string, value interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = value
+}
+
+func (s *settings) Has(key string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.data[key]
+	return ok
+}
+
+func (s *settings) Remove(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.data, key)
+}
+
+func (s *settings) All() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make(map[string]interface{})
+	for k, v := range s.data {
+		result[k] = v
+	}
+	return result
+}
+
+func (s *settings) GetString(key string, defaultVal string) string {
+	if v, ok := s.Get(key).(string); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func (s *settings) GetInt(key string, defaultVal int) int {
+	if v, ok := s.Get(key).(int); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func (s *settings) GetBool(key string, defaultVal bool) bool {
+	if v, ok := s.Get(key).(bool); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func (s *settings) GetFloat(key string, defaultVal float64) float64 {
+	if v, ok := s.Get(key).(float64); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func (s *settings) GetStrings(key string, defaultVal []string) []string {
+	if v, ok := s.Get(key).([]string); ok {
+		return v
+	}
+	return defaultVal
+}
+
+type Manager struct {
+	settings map[string]Settings
+	mu       sync.RWMutex
+}
+
+func NewManager() *Manager {
+	return &Manager{settings: make(map[string]Settings)}
+}
+
+func (m *Manager) GetSettings(namespace string) Settings {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if s, ok := m.settings[namespace]; ok {
+		return s
+	}
+	return New()
+}
+
+func (m *Manager) AddSettings(namespace string, settings Settings) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.settings[namespace] = settings
+}
+
+func (m *Manager) AllSettings(namespace string) map[string]interface{} {
+	s := m.GetSettings(namespace)
+	return s.All()
+}
+
+type EnvironmentSettings struct {
+	*settings
+	envPrefix string
+}
+
+func NewEnvironmentSettings(prefix string) *EnvironmentSettings {
+	return &EnvironmentSettings{
+		settings:  New(),
+		envPrefix: prefix,
+	}
+}
+
+func (s *EnvironmentSettings) LoadFromEnv() {
+	for _, e := range os.Environ() {
+		pair := strings.SplitN(e, "=", 2)
+		if len(pair) != 2 {
+			continue
+		}
+		key := pair[0]
+		value := pair[1]
+		if s.envPrefix != "" && !strings.HasPrefix(key, s.envPrefix) {
+			continue
+		}
+		envKey := key
+		if s.envPrefix != "" {
+			envKey = strings.TrimPrefix(key, s.envPrefix+"_")
+			envKey = strings.ReplaceAll(envKey, "_", ".")
+		}
+		s.Set(envKey, value)
+	}
+}
+
+func (s *EnvironmentSettings) SetPrefix(prefix string) {
+	s.envPrefix = prefix
+}
+
+type StoreItem struct {
+	Key         string
+	Value       interface{}
+	Type        string
+	Description string
+	Editable    bool
+	Encrypted   bool
+}
+
+type Store interface {
+	List() []StoreItem
+	Get(key string) (StoreItem, bool)
+	SetWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error
+}
+
+type memoryStore struct {
+	items map[string]StoreItem
 	mu    sync.RWMutex
-	cache map[string]Setting
-	enc   Encryptor
 }
 
-func Open(ctx context.Context, dsn string) (*Store, error) {
-	return OpenWithConfig(ctx, Config{DSN: dsn})
+func NewStore() Store {
+	return &memoryStore{items: make(map[string]StoreItem)}
 }
 
-func OpenWithConfig(ctx context.Context, cfg Config) (*Store, error) {
-	dsn := strings.TrimSpace(cfg.DSN)
-	if dsn == "" {
-		return nil, errors.New("missing settings dsn")
+func (s *memoryStore) List() []StoreItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]StoreItem, 0, len(s.items))
+	for _, item := range s.items {
+		result = append(result, item)
 	}
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL;`); err != nil {
-		return nil, err
-	}
-	if _, err := db.ExecContext(ctx, `PRAGMA busy_timeout=5000;`); err != nil {
-		return nil, err
-	}
-	if _, err := db.ExecContext(ctx, `PRAGMA synchronous=NORMAL;`); err != nil {
-		return nil, err
-	}
-	if _, err := db.ExecContext(ctx, `
-CREATE TABLE IF NOT EXISTS gmcore_settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL DEFAULT '',
-  type TEXT NOT NULL DEFAULT 'string',
-  description TEXT NOT NULL DEFAULT '',
-  editable INTEGER NOT NULL DEFAULT 1,
-  encrypted INTEGER NOT NULL DEFAULT 0
-)`); err != nil {
-		return nil, err
-	}
-	_, _ = db.ExecContext(ctx, `ALTER TABLE gmcore_settings ADD COLUMN description TEXT NOT NULL DEFAULT ''`)
-	_, _ = db.ExecContext(ctx, `ALTER TABLE gmcore_settings ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0`)
-	store := &Store{db: db, cache: map[string]Setting{}, enc: cfg.Encryptor}
-	if err := store.Reload(ctx); err != nil {
-		return nil, err
-	}
-	return store, nil
+	return result
 }
 
-func (s *Store) Reload(ctx context.Context) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value, type, description, editable, encrypted FROM gmcore_settings`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	cache := make(map[string]Setting)
-	for rows.Next() {
-		var current Setting
-		var editable int
-		var encrypted int
-		if err := rows.Scan(&current.Key, &current.Value, &current.Type, &current.Description, &editable, &encrypted); err != nil {
-			return err
-		}
-		current.Editable = editable != 0
-		current.Encrypted = encrypted != 0
-		if current.Encrypted && s.enc != nil && strings.TrimSpace(current.Value) != "" {
-			if plain, err := s.enc.Decrypt(current.Value); err == nil {
-				current.Value = plain
-			}
-		}
-		cache[current.Key] = current
-	}
+func (s *memoryStore) Get(key string) (StoreItem, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	item, ok := s.items[key]
+	return item, ok
+}
+
+func (s *memoryStore) SetWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error {
 	s.mu.Lock()
-	s.cache = cache
-	s.mu.Unlock()
-	return rows.Err()
-}
-
-func (s *Store) Get(key string) (Setting, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	current, ok := s.cache[strings.TrimSpace(key)]
-	return current, ok
-}
-
-func (s *Store) List() []Setting {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]Setting, 0, len(s.cache))
-	for _, current := range s.cache {
-		out = append(out, current)
+	defer s.mu.Unlock()
+	s.items[key] = StoreItem{
+		Key:         key,
+		Value:       value,
+		Type:        valueType,
+		Description: description,
+		Editable:    editable,
+		Encrypted:   encrypted,
 	}
-	return out
-}
-
-func (s *Store) ListEditable() []Setting {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]Setting, 0, len(s.cache))
-	for _, current := range s.cache {
-		if current.Editable {
-			out = append(out, current)
-		}
-	}
-	return out
-}
-
-func (s *Store) GetString(key, fallback string) string {
-	if current, ok := s.Get(key); ok && strings.TrimSpace(current.Value) != "" {
-		return current.Value
-	}
-	return fallback
-}
-
-func (s *Store) GetBool(key string, fallback bool) bool {
-	if current, ok := s.Get(key); ok {
-		value := strings.ToLower(strings.TrimSpace(current.Value))
-		return value == "1" || value == "true" || value == "yes" || value == "on"
-	}
-	return fallback
-}
-
-func (s *Store) Set(ctx context.Context, key, value, valueType string, editable bool) error {
-	return s.SetWithOptions(ctx, key, value, valueType, "", editable, false)
-}
-
-func (s *Store) SetDescription(ctx context.Context, key, value, valueType, description string, editable bool) error {
-	return s.SetWithOptions(ctx, key, value, valueType, description, editable, false)
-}
-
-func (s *Store) SetWithOptions(ctx context.Context, key, value, valueType, description string, editable bool, encrypted bool) error {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return errors.New("missing setting key")
-	}
-	valueType = strings.TrimSpace(valueType)
-	if valueType == "" {
-		valueType = "string"
-	}
-	editableInt := 0
-	if editable {
-		editableInt = 1
-	}
-	encryptedInt := 0
-	storedValue := value
-	if encrypted {
-		encryptedInt = 1
-		if s.enc == nil {
-			return errors.New("missing encryptor")
-		}
-		encoded, err := s.enc.Encrypt(value)
-		if err != nil {
-			return err
-		}
-		storedValue = encoded
-	}
-	if _, err := s.db.ExecContext(ctx, `
-INSERT INTO gmcore_settings (key, value, type, description, editable, encrypted)
-VALUES (?, ?, ?, ?, ?, ?)
-ON CONFLICT(key) DO UPDATE SET value=excluded.value, type=excluded.type, description=excluded.description, editable=excluded.editable, encrypted=excluded.encrypted
-`, key, storedValue, valueType, strings.TrimSpace(description), editableInt, encryptedInt); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	s.cache[key] = Setting{Key: key, Value: value, Type: valueType, Description: strings.TrimSpace(description), Editable: editable, Encrypted: encrypted}
-	s.mu.Unlock()
 	return nil
-}
-
-func (s *Store) Seed(ctx context.Context, key, value, valueType string, editable bool) error {
-	return s.SeedWithOptions(ctx, key, value, valueType, "", editable, false)
-}
-
-func (s *Store) SeedDescription(ctx context.Context, key, value, valueType, description string, editable bool) error {
-	return s.SeedWithOptions(ctx, key, value, valueType, description, editable, false)
-}
-
-func (s *Store) SeedWithOptions(ctx context.Context, key, value, valueType, description string, editable bool, encrypted bool) error {
-	if current, ok := s.Get(key); ok {
-		if current.Type == strings.TrimSpace(valueType) &&
-			current.Description == strings.TrimSpace(description) &&
-			current.Editable == editable &&
-			current.Encrypted == encrypted {
-			return nil
-		}
-		return s.SetWithOptions(ctx, key, current.Value, valueType, description, editable, encrypted)
-	}
-	return s.SetWithOptions(ctx, key, value, valueType, description, editable, encrypted)
 }

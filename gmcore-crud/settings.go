@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"context"
@@ -7,15 +7,15 @@ import (
 	"sort"
 	"strings"
 
-	gmcoresettings "gmcore-settings"
+	gmcore_settings "github.com/gmcorenet/sdk/gmcore-settings"
 )
 
 type SettingsBackendConfig struct {
-	Store *gmcoresettings.Store
+	Store gmcore_settings.Store
 }
 
 type SettingsBackend struct {
-	store *gmcoresettings.Store
+	store gmcore_settings.Store
 }
 
 func NewSettingsBackend(cfg SettingsBackendConfig) (*SettingsBackend, error) {
@@ -34,7 +34,7 @@ func (b *SettingsBackend) List(ctx context.Context, cfg Config, params ListParam
 	records := make([]Record, 0, len(items))
 	search := strings.ToLower(strings.TrimSpace(params.Search))
 	for _, item := range items {
-		if search != "" && !strings.Contains(strings.ToLower(item.Key), search) && !strings.Contains(strings.ToLower(item.Value), search) {
+		if search != "" && !strings.Contains(strings.ToLower(item.Key), search) && !strings.Contains(strings.ToLower(fmt.Sprint(item.Value)), search) {
 			continue
 		}
 		records = append(records, Record{

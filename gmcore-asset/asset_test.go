@@ -1,4 +1,4 @@
-package gmcoreasset
+package gmcore_asset
 
 import (
 	"os"
@@ -13,7 +13,7 @@ func TestManifestLoadAndPackageURL(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte(`{"/css/app.css":"/css/app.123.css"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := LoadManifest(manifestPath)
+	manifest, err := LoadManifestFile(manifestPath)
 	if err != nil {
 		t.Fatal(err)
 	}

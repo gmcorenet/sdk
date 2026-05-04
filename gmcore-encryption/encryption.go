@@ -1,4 +1,4 @@
-package gmcoreencryption
+package gmcore_encryption
 
 import (
 	"crypto/aes"
@@ -8,8 +8,6 @@ import (
 	"errors"
 	"io"
 	"strings"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Service struct {

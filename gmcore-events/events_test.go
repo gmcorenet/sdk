@@ -1,4 +1,4 @@
-package gmcoreevents
+package gmcore_events
 
 import (
 	"context"

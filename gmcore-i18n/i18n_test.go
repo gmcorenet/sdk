@@ -1,4 +1,4 @@
-package gmcorei18n
+package gmcore_i18n
 
 import (
 	"net/http/httptest"

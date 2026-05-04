@@ -1,22 +1,28 @@
-package gmcorevalidation
+package gmcore_validation
 
 import (
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Errors map[string][]string
 
 type Rule interface {
 	Validate(field string, value interface{}) string
+}
+
+type ContextAwareRule interface {
+	Rule
+	SetValidationContext(values map[string]interface{})
 }
 
 type Schema map[string][]Rule
@@ -85,6 +91,9 @@ func Validate(values map[string]interface{}, schema Schema) Errors {
 			if rule == nil {
 				continue
 			}
+			if ctxRule, ok := rule.(ContextAwareRule); ok {
+				ctxRule.SetValidationContext(values)
+			}
 			errors.Add(field, rule.Validate(field, value))
 		}
 	}
@@ -92,6 +101,12 @@ func Validate(values map[string]interface{}, schema Schema) Errors {
 		return nil
 	}
 	return errors
+}
+
+func ValidateStruct(data interface{}, schema Schema) Errors {
+	values := map[string]interface{}{}
+	_ = data
+	return Validate(values, schema)
 }
 
 type RequiredRule struct{}
@@ -123,10 +138,22 @@ type RangeRule struct{ Min, Max float64 }
 type MinRule struct{ Value float64 }
 type MaxRule struct{ Value float64 }
 
-type EqualToRule struct{ Field string }
-type NotEqualToRule struct{ Field string }
-type IdenticalToRule struct{ Field string }
-type NotIdenticalToRule struct{ Field string }
+type EqualToRule struct {
+	Field string
+	ctx   map[string]interface{}
+}
+type NotEqualToRule struct {
+	Field string
+	ctx   map[string]interface{}
+}
+type IdenticalToRule struct {
+	Field string
+	ctx   map[string]interface{}
+}
+type NotIdenticalToRule struct {
+	Field string
+	ctx   map[string]interface{}
+}
 
 type LessThanRule struct{ Value float64 }
 type LessThanOrEqualRule struct{ Value float64 }
@@ -191,10 +218,15 @@ type TimeRule struct{}
 type DateTimeRule struct{}
 
 type WhenRule struct {
-	Field   string
-	Value   interface{}
-	Rules   []Rule
+	Field     string
+	Value     interface{}
+	Rules     []Rule
 	ElseRules []Rule
+	ctx       map[string]interface{}
+}
+
+func (r *WhenRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
 }
 
 var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
@@ -237,10 +269,10 @@ func Range(min, max float64) Rule { return RangeRule{Min: min, Max: max} }
 func Min(value float64) Rule { return MinRule{Value: value} }
 func Max(value float64) Rule { return MaxRule{Value: value} }
 
-func EqualTo(field string) Rule { return EqualToRule{Field: field} }
-func NotEqualTo(field string) Rule { return NotEqualToRule{Field: field} }
-func IdenticalTo(field string) Rule { return IdenticalToRule{Field: field} }
-func NotIdenticalTo(field string) Rule { return NotIdenticalToRule{Field: field} }
+func EqualTo(field string) Rule { return &EqualToRule{Field: field} }
+func NotEqualTo(field string) Rule { return &NotEqualToRule{Field: field} }
+func IdenticalTo(field string) Rule { return &IdenticalToRule{Field: field} }
+func NotIdenticalTo(field string) Rule { return &NotIdenticalToRule{Field: field} }
 
 func LessThan(value float64) Rule { return LessThanRule{Value: value} }
 func LessThanOrEqual(value float64) Rule { return LessThanOrEqualRule{Value: value} }
@@ -302,7 +334,7 @@ func Time() Rule { return TimeRule{} }
 func DateTime() Rule { return DateTimeRule{} }
 
 func When(field string, value interface{}, rules []Rule, elseRules []Rule) Rule {
-	return WhenRule{Field: field, Value: value, Rules: rules, ElseRules: elseRules}
+	return &WhenRule{Field: field, Value: value, Rules: rules, ElseRules: elseRules}
 }
 
 func (r RequiredRule) Validate(field string, value interface{}) string {
@@ -925,8 +957,11 @@ func (r TimeRule) Validate(field string, value interface{}) string {
 	return field + ": invalid time"
 }
 
-func (r WhenRule) Validate(field string, value interface{}) string {
-	conditionValue := getFieldValue(field)
+func (r *WhenRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	conditionValue := r.ctx[r.Field]
 	if fmt.Sprint(conditionValue) == fmt.Sprint(r.Value) {
 		for _, rule := range r.Rules {
 			if err := rule.Validate(field, value); err != "" {
@@ -947,6 +982,61 @@ func (r FileRule) Validate(field string, value interface{}) string {
 	if r.isEmpty(value) {
 		return ""
 	}
+
+	switch v := value.(type) {
+	case string:
+		if v == "" {
+			return ""
+		}
+		info, err := os.Stat(v)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return field + ": file does not exist"
+			}
+			return field + ": invalid file"
+		}
+		if info.IsDir() {
+			return field + ": expected file, got directory"
+		}
+		if r.MaxSize > 0 && info.Size() > r.MaxSize {
+			return field + fmt.Sprintf(": file size exceeds maximum of %d bytes", r.MaxSize)
+		}
+		if len(r.Extensions) > 0 {
+			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(v), "."))
+			validExt := false
+			for _, e := range r.Extensions {
+				if strings.ToLower(e) == ext {
+					validExt = true
+					break
+				}
+			}
+			if !validExt {
+				return field + ": invalid file extension"
+			}
+		}
+	case *multipart.FileHeader:
+		if r.MaxSize > 0 && v.Size > r.MaxSize {
+			return field + fmt.Sprintf(": file size exceeds maximum of %d bytes", r.MaxSize)
+		}
+		if len(r.Extensions) > 0 {
+			ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(v.Filename), "."))
+			validExt := false
+			for _, e := range r.Extensions {
+				if strings.ToLower(e) == ext {
+					validExt = true
+					break
+				}
+			}
+			if !validExt {
+				return field + ": invalid file extension"
+			}
+		}
+	case []byte:
+		if r.MaxSize > 0 && int64(len(v)) > r.MaxSize {
+			return field + fmt.Sprintf(": file size exceeds maximum of %d bytes", r.MaxSize)
+		}
+	}
+
 	return ""
 }
 
@@ -954,6 +1044,31 @@ func (r ImageRule) Validate(field string, value interface{}) string {
 	if r.isEmpty(value) {
 		return ""
 	}
+
+	switch v := value.(type) {
+	case string:
+		if v == "" {
+			return ""
+		}
+		info, err := os.Stat(v)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return field + ": file does not exist"
+			}
+			return field + ": invalid file"
+		}
+		if info.IsDir() {
+			return field + ": expected image, got directory"
+		}
+		if r.MaxSize > 0 && info.Size() > r.MaxSize {
+			return field + fmt.Sprintf(": file size exceeds maximum of %d bytes", r.MaxSize)
+		}
+	case *multipart.FileHeader:
+		if r.MaxSize > 0 && v.Size > r.MaxSize {
+			return field + fmt.Sprintf(": file size exceeds maximum of %d bytes", r.MaxSize)
+		}
+	}
+
 	return ""
 }
 
@@ -1048,19 +1163,60 @@ func (r GreaterThanOrEqualRule) Validate(field string, value interface{}) string
 	return ""
 }
 
-func (r EqualToRule) Validate(field string, value interface{}) string {
+func (r *EqualToRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
+}
+func (r *NotEqualToRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
+}
+func (r *IdenticalToRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
+}
+func (r *NotIdenticalToRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
+}
+
+func (r *EqualToRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	otherValue := r.ctx[r.Field]
+	if fmt.Sprint(value) != fmt.Sprint(otherValue) {
+		return field + ": must be equal to " + r.Field
+	}
 	return ""
 }
 
-func (r NotEqualToRule) Validate(field string, value interface{}) string {
+func (r *NotEqualToRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	otherValue := r.ctx[r.Field]
+	if fmt.Sprint(value) == fmt.Sprint(otherValue) {
+		return field + ": must not be equal to " + r.Field
+	}
 	return ""
 }
 
-func (r IdenticalToRule) Validate(field string, value interface{}) string {
+func (r *IdenticalToRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	otherValue := r.ctx[r.Field]
+	if value != otherValue {
+		return field + ": must be identical to " + r.Field
+	}
 	return ""
 }
 
-func (r NotIdenticalToRule) Validate(field string, value interface{}) string {
+func (r *NotIdenticalToRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	otherValue := r.ctx[r.Field]
+	if value == otherValue {
+		return field + ": must not be identical to " + r.Field
+	}
 	return ""
 }
 
@@ -1157,7 +1313,21 @@ func (r HostRule) Validate(field string, value interface{}) string {
 	if r.isEmpty(value) {
 		return ""
 	}
-	return ""
+	v := fmt.Sprint(value)
+	if v == "" {
+		return ""
+	}
+
+	hostPattern := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$`)
+	ipPattern := regexp.MustCompile(`^(\d{1,3}\.){3}\d{1,3}$`)
+
+	if ipPattern.MatchString(v) {
+		return ""
+	}
+	if hostPattern.MatchString(v) || v == "localhost" {
+		return ""
+	}
+	return field + ": invalid host"
 }
 
 func (r ProtocolRule) Validate(field string, value interface{}) string {
@@ -1249,10 +1419,6 @@ func toFloat64(value interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func getFieldValue(field string) interface{} {
-	return nil
 }
 
 func (r *RequiredRule) isEmpty(v interface{}) bool { return isEmptyValue(v) }

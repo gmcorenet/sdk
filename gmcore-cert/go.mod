@@ -4,8 +4,7 @@ go 1.21
 
 require (
 	github.com/gmcorenet/sdk/gmcore-cert v0.0.0
-	golang.org/x/crypto/acme v0.0.0
-	golang.org/x/crypto/acme/autocert v0.0.0
+	golang.org/x/crypto v0.17.0
 	github.com/gmcorenet/gmcore-error v0.1.0
 )
 

@@ -1,4 +1,4 @@
-package error
+package gmcore_error
 
 import (
 	"fmt"

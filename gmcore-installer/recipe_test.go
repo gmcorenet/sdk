@@ -1,4 +1,4 @@
-package gmcoreinstaller
+package gmcore_installer
 
 import (
 	"archive/tar"

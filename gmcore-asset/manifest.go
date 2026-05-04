@@ -1,4 +1,4 @@
-package gmcoreasset
+package gmcore_asset
 
 import (
 	"crypto/sha256"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 )
+
+type Manifest = map[string]ManifestEntry
 
 type ManifestV1 struct {
 	Version string                 `json:"version"`
@@ -49,7 +51,7 @@ func (m *ManifestV1) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600)
 }
 
 func (m *ManifestV1) Add(assetPath, version string) {

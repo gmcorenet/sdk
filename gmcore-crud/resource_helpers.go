@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	gmcoreform "gmcore-form"
+	gmcore_form "github.com/gmcorenet/sdk/gmcore-form"
 )
 
 var csvFormulaPattern = regexp.MustCompile(`^[=+\-@\t\r]+`)
@@ -34,13 +34,13 @@ type LayoutMeta struct {
 	Fields []LayoutFieldMeta `json:"fields"`
 }
 
-func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Definition, cfg Config) gmcoreform.Definition {
+func EffectiveFormDefinition(resourceName, titleKey string, form gmcore_form.Definition, cfg Config) gmcore_form.Definition {
 	if len(form.Fields) > 0 {
 		return form
 	}
-	fields := make([]gmcoreform.Field, 0, len(cfg.Fields))
+	fields := make([]gmcore_form.Field, 0, len(cfg.Fields))
 	for _, field := range cfg.Fields {
-		formField := gmcoreform.Field{
+		formField := gmcore_form.Field{
 			Name:        field.Name,
 			Label:       field.Label,
 			LabelKey:    field.LabelKey,
@@ -57,18 +57,18 @@ func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Defi
 			formField.ValueField = relation.ValueField
 			formField.DisplayField = relation.DisplayField
 			if relation.Async {
-				formField.OptionRemote = &gmcoreform.RemoteOptions{
+				formField.OptionRemote = &gmcore_form.RemoteOptions{
 					Delay:         relation.AsyncDebounce,
 					MinInputLength: relation.AsyncLimit,
 				}
 			}
 			if relation.Widget != "" {
-				formField.Widget = gmcoreform.WidgetType(relation.Widget)
+				formField.Widget = gmcore_form.WidgetType(relation.Widget)
 			}
 			if relation.Type == RelationHasMany || relation.Type == RelationManyToMany {
 				formField.Multiple = true
 				if relation.Widget == "" {
-					formField.Widget = gmcoreform.WidgetSelect
+					formField.Widget = gmcore_form.WidgetSelect
 				}
 			}
 		}
@@ -80,7 +80,7 @@ func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Defi
 		}
 		fields = append(fields, formField)
 	}
-	return gmcoreform.Definition{
+	return gmcore_form.Definition{
 		Name:    resourceName,
 		Title:   titleKey,
 		Fields:  fields,
@@ -88,15 +88,15 @@ func EffectiveFormDefinition(resourceName, titleKey string, form gmcoreform.Defi
 	}
 }
 
-func ApplyLayoutMeta(form gmcoreform.Definition, meta LayoutMeta) gmcoreform.Definition {
+func ApplyLayoutMeta(form gmcore_form.Definition, meta LayoutMeta) gmcore_form.Definition {
 	if len(meta.Fields) == 0 {
 		return form
 	}
-	fieldMap := map[string]gmcoreform.Field{}
+	fieldMap := map[string]gmcore_form.Field{}
 	for _, field := range form.Fields {
 		fieldMap[field.Name] = field
 	}
-	out := make([]gmcoreform.Field, 0, len(form.Fields))
+	out := make([]gmcore_form.Field, 0, len(form.Fields))
 	seen := map[string]struct{}{}
 	for _, current := range meta.Fields {
 		field, ok := fieldMap[current.Name]
@@ -107,7 +107,7 @@ func ApplyLayoutMeta(form gmcoreform.Definition, meta LayoutMeta) gmcoreform.Def
 			field.ColSpan = current.ColSpan
 		}
 		if current.Widget != "" {
-			field.Widget = gmcoreform.WidgetType(current.Widget)
+			field.Widget = gmcore_form.WidgetType(current.Widget)
 		}
 		if current.Validation != nil {
 			field.Validation = append([]string(nil), current.Validation...)
@@ -181,57 +181,57 @@ func ExportRecords(w http.ResponseWriter, resourceName string, cfg Config, actio
 	}
 }
 
-func defaultWidgetForField(field Field) gmcoreform.WidgetType {
+func defaultWidgetForField(field Field) gmcore_form.WidgetType {
 	switch field.Type {
 	case "email":
-		return gmcoreform.WidgetText
+		return gmcore_form.WidgetText
 	case "password", "password_hash":
-		return gmcoreform.WidgetText
+		return gmcore_form.WidgetText
 	case "datetime":
-		return gmcoreform.WidgetDateTimePicker
+		return gmcore_form.WidgetDateTimePicker
 	case "date":
-		return gmcoreform.WidgetDatePicker
+		return gmcore_form.WidgetDatePicker
 	case "int", "integer", "float", "number":
-		return gmcoreform.WidgetText
+		return gmcore_form.WidgetText
 	case "json", "array":
-		return gmcoreform.WidgetTextarea
+		return gmcore_form.WidgetTextarea
 	default:
-		return gmcoreform.WidgetText
+		return gmcore_form.WidgetText
 	}
 }
 
-func toInputType(t string) gmcoreform.InputType {
+func toInputType(t string) gmcore_form.InputType {
 	switch t {
 	case "email":
-		return gmcoreform.TypeEmail
+		return gmcore_form.TypeEmail
 	case "password":
-		return gmcoreform.TypePassword
+		return gmcore_form.TypePassword
 	case "datetime":
-		return gmcoreform.TypeDateTime
+		return gmcore_form.TypeDateTime
 	case "date":
-		return gmcoreform.TypeDate
+		return gmcore_form.TypeDate
 	case "time":
-		return gmcoreform.TypeTime
+		return gmcore_form.TypeTime
 	case "int", "integer":
-		return gmcoreform.TypeInteger
+		return gmcore_form.TypeInteger
 	case "float", "decimal", "number":
-		return gmcoreform.TypeDecimal
+		return gmcore_form.TypeDecimal
 	case "bool", "boolean":
-		return gmcoreform.TypeBoolean
+		return gmcore_form.TypeBoolean
 	case "text", "string":
-		return gmcoreform.TypeText
+		return gmcore_form.TypeText
 	case "textarea":
-		return gmcoreform.TypeTextarea
+		return gmcore_form.TypeTextarea
 	case "html":
-		return gmcoreform.TypeHtml
+		return gmcore_form.TypeHtml
 	case "json":
-		return gmcoreform.TypeJson
+		return gmcore_form.TypeJson
 	case "uuid":
-		return gmcoreform.TypeUuid
+		return gmcore_form.TypeUuid
 	case "select":
-		return gmcoreform.TypeSelect
+		return gmcore_form.TypeSelect
 	default:
-		return gmcoreform.TypeText
+		return gmcore_form.TypeText
 	}
 }
 

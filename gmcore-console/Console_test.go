@@ -1,4 +1,4 @@
-package gmcoreconsole
+package gmcore_console
 
 import (
 	"bytes"

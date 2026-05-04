@@ -1,4 +1,4 @@
-package gmcoreform
+package gmcore_form
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	gmcorevalidation "gmcore-validation"
+	gmcore_validation "github.com/gmcorenet/sdk/gmcore-validation"
 )
 
 type DefinitionOptions struct {
@@ -60,8 +60,8 @@ func DefinitionFromStruct(value interface{}, options DefinitionOptions) (Definit
 	return definition, nil
 }
 
-func ValidationSchemaFromStruct(value interface{}) (gmcorevalidation.Schema, error) {
-	return nil, nil
+func ValidationSchemaFromStruct(value interface{}) (gmcore_validation.Schema, error) {
+	return nil, fmt.Errorf("ValidationSchemaFromStruct not implemented: use DefinitionFromStruct which extracts validation tags into Field.Validation")
 }
 
 func normalizeValidationTag(raw string) []string {

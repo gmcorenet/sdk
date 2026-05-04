@@ -1,18 +1,49 @@
-package gmcoreasset
+package gmcore_asset
 
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
+type AssetType = string
+
+const (
+	AssetTypeCSS  AssetType = "css"
+	AssetTypeJS   AssetType = "js"
+	AssetTypeImg  AssetType = "img"
+	AssetTypeFont AssetType = "font"
+)
+
+type AssetPosition = string
+
+const (
+	PositionHead      AssetPosition = "head"
+	PositionBodyStart AssetPosition = "body_start"
+	PositionBodyEnd   AssetPosition = "body_end"
+)
+
+type assetRef struct {
+	Namespace string
+	Path      string
+}
+
+func ParseAssetReference(ref string) (assetRef, bool) {
+	parts := strings.SplitN(ref, ":", 2)
+	if len(parts) == 2 {
+		return assetRef{Namespace: parts[0], Path: parts[1]}, true
+	}
+	return assetRef{Path: ref}, true
+}
+
 type Collector struct {
 	registry   *Registry
 	themeMgr   *ThemeManager
-	manifest   Manifest
+	manifest   map[string]ManifestEntry
 	baseURL    string
 	version    string
 	publicDir  string
@@ -23,7 +54,7 @@ func NewCollector(opts ...CollectorOption) *Collector {
 	c := &Collector{
 		registry:   DefaultRegistry(),
 		themeMgr:   DefaultThemeManager(),
-		manifest:   make(Manifest),
+		manifest:   make(map[string]ManifestEntry),
 		versionMap: make(map[string]string),
 	}
 	for _, opt := range opts {
@@ -170,7 +201,7 @@ func (c *Collector) renderInline(assetType AssetType, path string) string {
 
 	data, err := os.ReadFile(fullPath)
 	if err != nil {
-		return fmt.Sprintf(`<!-- Error loading inline asset: %s -->`, path)
+		return fmt.Sprintf(`<!-- Error loading inline asset: %s -->`, html.EscapeString(path))
 	}
 
 	content := string(data)
@@ -185,8 +216,8 @@ func (c *Collector) renderInline(assetType AssetType, path string) string {
 
 func (c *Collector) resolvePath(assetPath string) string {
 	if strings.HasPrefix(assetPath, "/") {
-		if versioned, ok := c.manifest[assetPath]; ok {
-			assetPath = versioned
+		if entry, ok := c.manifest[assetPath]; ok {
+			assetPath = entry.Version
 		}
 	}
 
@@ -265,19 +296,19 @@ func (c *Collector) renderTags(tags []string) string {
 }
 
 func (c *Collector) LoadManifest(path string) error {
-	m, err := LoadManifest(path)
+	m, err := LoadManifestFile(path)
 	if err != nil {
 		return err
 	}
-	c.manifest = m
+	c.manifest = m.Assets
 	return nil
 }
 
-func (c *Collector) BuildManifest(assets []Asset) Manifest {
-	m := make(Manifest)
+func (c *Collector) BuildManifest(assets []Asset) map[string]ManifestEntry {
+	m := make(map[string]ManifestEntry)
 	for _, a := range assets {
 		if strings.HasPrefix(a.Path, "/") {
-			m[a.Path] = a.Path
+			m[a.Path] = ManifestEntry{Version: a.Path}
 		}
 	}
 	return m

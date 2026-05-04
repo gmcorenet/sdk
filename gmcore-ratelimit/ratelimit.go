@@ -1,15 +1,9 @@
-package gmcoreratelimit
+package gmcore_ratelimit
 
 import (
-	"context"
-	"errors"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 )
-
-var ErrNotStored = errors.New("key not found")
 
 type Rule struct {
 	Name      string
@@ -18,142 +12,183 @@ type Rule struct {
 	RawWindow string
 }
 
-type Config struct {
-	Rules map[string]Rule
+type RateLimiter interface {
+	Allow(key string) bool
+	Reset(key string)
 }
 
-type Limiter interface {
-	Allow(ctx context.Context, ruleName, key string) (bool, error)
-	Reset(ctx context.Context, ruleName, key string) error
-	Close() error
+type limiter struct {
+	tokens    map[string][]time.Time
+	rate      int
+	window    time.Duration
+	mu        sync.Mutex
 }
 
-type entry struct {
-	Count     int
-	ExpiresAt time.Time
-}
-
-type MemoryLimiter struct {
-	mu    sync.Mutex
-	rules map[string]Rule
-	hits  map[string]entry
-	now   func() time.Time
-}
-
-func NewMemoryLimiter(cfg Config) *MemoryLimiter {
-	rules := map[string]Rule{}
-	for name, rule := range cfg.Rules {
-		normalized := strings.TrimSpace(name)
-		if normalized == "" {
-			normalized = strings.TrimSpace(rule.Name)
-		}
-		if normalized == "" {
-			continue
-		}
-		if rule.Limit <= 0 {
-			rule.Limit = 5
-		}
-		if rule.Window <= 0 {
-			if parsed, err := time.ParseDuration(strings.TrimSpace(rule.RawWindow)); err == nil && parsed > 0 {
-				rule.Window = parsed
-			}
-		}
-		if rule.Window <= 0 {
-			rule.Window = time.Minute
-		}
-		rule.Name = normalized
-		rules[normalized] = rule
+func NewRateLimiter(rate int, window time.Duration) *limiter {
+	return &limiter{
+		tokens: make(map[string][]time.Time),
+		rate:   rate,
+		window: window,
 	}
-	return &MemoryLimiter{rules: rules, hits: map[string]entry{}, now: time.Now}
 }
 
-func DefaultConfig() Config {
-	return Config{Rules: map[string]Rule{
-		"security.login":           {Name: "security.login", Limit: 8, Window: time.Minute},
-		"security.token":           {Name: "security.token", Limit: 20, Window: time.Minute},
-		"security.2fa_challenge":  {Name: "security.2fa_challenge", Limit: 6, Window: time.Minute},
-		"security.recovery_codes":  {Name: "security.recovery_codes", Limit: 3, Window: 5 * time.Minute},
-	}}
-}
+func (l *limiter) Allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-func (l *MemoryLimiter) Allow(ctx context.Context, ruleName, key string) (bool, error) {
-	if l == nil {
-		return true, nil
+	now := time.Now()
+	windowStart := now.Add(-l.window)
+
+	tokens := l.tokens[key]
+	valid := make([]time.Time, 0)
+	for _, t := range tokens {
+		if t.After(windowStart) {
+			valid = append(valid, t)
+		}
 	}
-	rule, ok := l.rules[strings.TrimSpace(ruleName)]
+
+	if len(valid) >= l.rate {
+		l.tokens[key] = valid
+		return false
+	}
+
+	valid = append(valid, now)
+	l.tokens[key] = valid
+	return true
+}
+
+func (l *limiter) Reset(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.tokens, key)
+}
+
+func (l *limiter) GetRemaining(key string) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	windowStart := now.Add(-l.window)
+
+	count := 0
+	for _, t := range l.tokens[key] {
+		if t.After(windowStart) {
+			count++
+		}
+	}
+	return l.rate - count
+}
+
+type SlidingWindowLimiter struct {
+	limiter *limiter
+}
+
+func NewSlidingWindow(rate int, window time.Duration) *SlidingWindowLimiter {
+	return &SlidingWindowLimiter{limiter: NewRateLimiter(rate, window)}
+}
+
+func (l *SlidingWindowLimiter) Allow(key string) bool {
+	return l.limiter.Allow(key)
+}
+
+func (l *SlidingWindowLimiter) Reset(key string) {
+	l.limiter.Reset(key)
+}
+
+type TokenBucketLimiter struct {
+	buckets map[string]*bucket
+	rate    int
+	size    int
+	mu      sync.Mutex
+}
+
+type bucket struct {
+	tokens    float64
+	lastRefill time.Time
+}
+
+func NewTokenBucket(rate, size int) *TokenBucketLimiter {
+	return &TokenBucketLimiter{
+		buckets: make(map[string]*bucket),
+		rate:    rate,
+		size:    size,
+	}
+}
+
+func (l *TokenBucketLimiter) Allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	b, ok := l.buckets[key]
 	if !ok {
-		return true, nil
+		b = &bucket{tokens: float64(l.size), lastRefill: time.Now()}
+		l.buckets[key] = b
 	}
-	key = strings.TrimSpace(key)
-	if key == "" {
-		key = "anonymous"
+
+	now := time.Now()
+	elapsed := now.Sub(b.lastRefill).Seconds()
+	b.tokens += elapsed * float64(l.rate)
+	if b.tokens > float64(l.size) {
+		b.tokens = float64(l.size)
 	}
-	now := l.now().UTC()
-	cacheKey := rule.Name + ":" + key
+	b.lastRefill = now
+
+	if b.tokens >= 1 {
+		b.tokens--
+		return true
+	}
+	return false
+}
+
+func (l *TokenBucketLimiter) Reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	current := l.hits[cacheKey]
-	if current.ExpiresAt.IsZero() || !now.Before(current.ExpiresAt) {
-		l.hits[cacheKey] = entry{Count: 1, ExpiresAt: now.Add(rule.Window)}
-		l.gcLocked(now)
-		return true, nil
-	}
-	if current.Count >= rule.Limit {
-		return false, nil
-	}
-	current.Count++
-	l.hits[cacheKey] = current
-	return true, nil
+	delete(l.buckets, key)
 }
 
-func (l *MemoryLimiter) Reset(ctx context.Context, ruleName, key string) error {
-	if l == nil {
-		return nil
+type FixedWindowLimiter struct {
+	windows map[string]*fixedWindow
+	rate    int
+	window  time.Duration
+	mu      sync.Mutex
+}
+
+type fixedWindow struct {
+	count      int
+	windowStart time.Time
+}
+
+func NewFixedWindow(rate int, window time.Duration) *FixedWindowLimiter {
+	return &FixedWindowLimiter{
+		windows: make(map[string]*fixedWindow),
+		rate:    rate,
+		window:  window,
 	}
-	key = strings.TrimSpace(key)
-	if key == "" {
-		key = "anonymous"
-	}
-	ruleName = strings.TrimSpace(ruleName)
-	if ruleName == "" {
-		return nil
-	}
-	cacheKey := ruleName + ":" + key
+}
+
+func (l *FixedWindowLimiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.hits, cacheKey)
-	return nil
+
+	now := time.Now()
+	windowStart := now.Truncate(l.window)
+
+	b, ok := l.windows[key]
+	if !ok || b.windowStart.Before(windowStart) {
+		l.windows[key] = &fixedWindow{count: 1, windowStart: windowStart}
+		return true
+	}
+
+	if b.count >= l.rate {
+		return false
+	}
+
+	b.count++
+	return true
 }
 
-func (l *MemoryLimiter) Close() error {
-	return nil
-}
-
-func (l *MemoryLimiter) gcLocked(now time.Time) {
-	for key, current := range l.hits {
-		if !current.ExpiresAt.IsZero() && now.After(current.ExpiresAt.Add(time.Minute)) {
-			delete(l.hits, key)
-		}
-	}
-}
-
-func ClientKey(r *http.Request, discriminator string) string {
-	parts := []string{}
-	if r != nil {
-		host, _, _ := strings.Cut(r.RemoteAddr, ":")
-		host = strings.TrimSpace(host)
-		if host == "" {
-			host = r.RemoteAddr
-		}
-		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-			host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
-		}
-		if host != "" {
-			parts = append(parts, host)
-		}
-	}
-	if value := strings.ToLower(strings.TrimSpace(discriminator)); value != "" {
-		parts = append(parts, value)
-	}
-	return strings.Join(parts, "|")
+func (l *FixedWindowLimiter) Reset(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.windows, key)
 }

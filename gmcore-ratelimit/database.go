@@ -1,4 +1,4 @@
-package gmcoreratelimit
+package gmcore_ratelimit
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type PostgresConfig struct {

@@ -1,4 +1,4 @@
-package gmcoreinstaller
+package gmcore_installer
 
 import (
 	"archive/tar"
@@ -17,8 +17,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Recipe struct {

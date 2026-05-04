@@ -1,4 +1,4 @@
-package gmcoreresponse
+package gmcore_response
 
 import (
 	"net/http"

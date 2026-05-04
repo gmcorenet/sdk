@@ -1,4 +1,4 @@
-package gmcorerouter
+package gmcore_router
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package gmcoretemplating
+package gmcore_templating
 
 import (
 	"bytes"
@@ -15,9 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	gmcoredebugbar "gmcore-debugbar"
-	gmcoreresolver "gmcore-resolver"
 )
 
 type Config struct {
@@ -87,12 +84,55 @@ func (e *Engine) TemplateExists(name string) bool {
 	return ok
 }
 
-func (e *Engine) Resolve(name string) (gmcoreresolver.ResolvedFile, bool) {
-	return gmcoreresolver.ResolveTemplate(gmcoreresolver.Config{
-		AppRoot:     e.cfg.AppRoot,
-		SystemRoot:  e.cfg.SystemRoot,
-		BundleRoots: e.cfg.BundleRoots,
-	}, name)
+type resolvedFileStub struct {
+	Path   string
+	Source string
+}
+
+func (e *Engine) Resolve(name string) (resolvedFileStub, bool) {
+	name = normalizeTemplateName(name)
+	if name == "" {
+		return resolvedFileStub{}, false
+	}
+	path, found := e.templatePath(name)
+	if !found {
+		return resolvedFileStub{}, false
+	}
+	source := e.determineSource(path)
+	return resolvedFileStub{Path: path, Source: source}, true
+}
+
+func (e *Engine) determineSource(path string) string {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	if e.cfg.AppRoot != "" {
+		appRoot, _ := filepath.Abs(e.cfg.AppRoot)
+		if strings.HasPrefix(absPath, appRoot) {
+			return "app"
+		}
+	}
+	if e.cfg.SystemRoot != "" {
+		systemRoot, _ := filepath.Abs(e.cfg.SystemRoot)
+		if strings.HasPrefix(absPath, systemRoot) {
+			return "system"
+		}
+	}
+	for _, bundleRoot := range e.cfg.BundleRoots {
+		if bundleRoot == "" {
+			continue
+		}
+		br, _ := filepath.Abs(bundleRoot)
+		if strings.HasPrefix(absPath, br) {
+			rel, _ := filepath.Rel(br, absPath)
+			parts := strings.Split(rel, string(filepath.Separator))
+			if len(parts) > 0 {
+				return parts[0]
+			}
+		}
+	}
+	return "unknown"
 }
 
 func (e *Engine) renderLegacy(ctx context.Context, name string, payload map[string]interface{}) (string, error) {
@@ -145,10 +185,7 @@ func (e *Engine) renderLegacy(ctx context.Context, name string, payload map[stri
 	}
 	resolved, ok := e.Resolve(name)
 	if ok {
-		gmcoredebugbar.RecordTemplate(ctx, resolved.Path)
-		if resolved.Source != "" {
-			gmcoredebugbar.RecordBundle(ctx, resolved.Source)
-		}
+		_ = resolved
 	}
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, target, payload); err != nil {
@@ -252,10 +289,7 @@ func (e *Engine) renderTwig(ctx context.Context, name string, payload map[string
 	}
 	resolved, ok := e.Resolve(name)
 	if ok {
-		gmcoredebugbar.RecordTemplate(ctx, resolved.Path)
-		if resolved.Source != "" {
-			gmcoredebugbar.RecordBundle(ctx, resolved.Source)
-		}
+		_ = resolved
 	}
 	var buf bytes.Buffer
 	if err := tpl.ExecuteTemplate(&buf, name, payload); err != nil {
@@ -953,10 +987,7 @@ func (e *Engine) renderIncludedTemplate(ctx context.Context, name string, payloa
 	return template.HTML(rendered)
 }
 
-func ResolveTemplate(cfg Config, name string) (gmcoreresolver.ResolvedFile, bool) {
-	return gmcoreresolver.ResolveTemplate(gmcoreresolver.Config{
-		AppRoot:     cfg.AppRoot,
-		SystemRoot:  cfg.SystemRoot,
-		BundleRoots: cfg.BundleRoots,
-	}, name)
+func ResolveTemplate(cfg Config, name string) (resolvedFileStub, bool) {
+	engine := New(cfg)
+	return engine.Resolve(name)
 }

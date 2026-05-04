@@ -1,7 +1,7 @@
-package gmcorei18n
+package gmcore_i18n
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Catalog map[string]string
@@ -797,7 +795,7 @@ func hashMessages(messages map[string]string) string {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	hasher := sha1.New()
+	hasher := sha256.New()
 	for _, key := range keys {
 		_, _ = hasher.Write([]byte(key))
 		_, _ = hasher.Write([]byte{0})

@@ -1,11 +1,9 @@
-package gmcoreresolver
+package gmcore_resolver
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -14,86 +12,135 @@ type Config struct {
 	BundleRoots []string
 }
 
-type ResolvedFile struct {
-	Path   string
-	Source string
+type Resolver struct {
+	roots []string
 }
 
-func ResolveRelativeFile(cfg Config, relativePath string) (ResolvedFile, bool) {
-	relativePath = cleanRelative(relativePath)
-	if relativePath == "" {
-		return ResolvedFile{}, false
-	}
+func New(roots ...string) *Resolver {
+	return &Resolver{roots: roots}
+}
 
-	candidates := make([]ResolvedFile, 0, 2+len(cfg.BundleRoots))
-	// Override precedence is always app > bundles > system.
-	if strings.TrimSpace(cfg.AppRoot) != "" {
-		candidates = append(candidates, ResolvedFile{
-			Path:   filepath.Join(cfg.AppRoot, relativePath),
-			Source: "app",
-		})
+func (r *Resolver) AddRoot(root string) {
+	r.roots = append(r.roots, root)
+}
+
+func (r *Resolver) Resolve(path string) (string, error) {
+	for _, root := range r.roots {
+		fullPath := filepath.Join(root, path)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath, nil
+		}
 	}
-	for _, root := range cfg.BundleRoots {
-		root = strings.TrimSpace(root)
-		if root == "" {
+	return "", os.ErrNotExist
+}
+
+func (r *Resolver) Exists(path string) bool {
+	_, err := r.Resolve(path)
+	return err == nil
+}
+
+func (r *Resolver) List(path string) ([]string, error) {
+	var files []string
+	for _, root := range r.roots {
+		fullPath := filepath.Join(root, path)
+		entries, err := os.ReadDir(fullPath)
+		if err != nil {
 			continue
 		}
-		candidates = append(candidates, ResolvedFile{
-			Path:   filepath.Join(root, relativePath),
-			Source: bundleSource(root),
-		})
-	}
-	if strings.TrimSpace(cfg.SystemRoot) != "" {
-		candidates = append(candidates, ResolvedFile{
-			Path:   filepath.Join(cfg.SystemRoot, relativePath),
-			Source: "system",
-		})
-	}
-
-	for _, candidate := range candidates {
-		info, err := os.Stat(candidate.Path)
-		if err == nil && !info.IsDir() {
-			return candidate, true
+		for _, e := range entries {
+			files = append(files, e.Name())
 		}
 	}
-	return ResolvedFile{}, false
+	return files, nil
 }
 
-func ResolveTemplate(cfg Config, name string) (ResolvedFile, bool) {
-	return ResolveRelativeFile(cfg, filepath.Join("templates", cleanRelative(name)))
-}
-
-func ResolveSource(cfg Config, name string) (ResolvedFile, bool) {
-	return ResolveRelativeFile(cfg, cleanRelative(name))
-}
-
-func cleanRelative(path string) string {
-	path = filepath.Clean(strings.TrimSpace(path))
-	path = strings.TrimPrefix(path, "/")
-	if path == "." {
-		return ""
+func (r *Resolver) Glob(pattern string) ([]string, error) {
+	var matches []string
+	for _, root := range r.roots {
+		fullPattern := filepath.Join(root, pattern)
+		entries, err := filepath.Glob(fullPattern)
+		if err != nil {
+			continue
+		}
+		matches = append(matches, entries...)
 	}
-	return path
+	return matches, nil
 }
 
-func bundleSource(root string) string {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return "bundle"
-	}
-	manifest := filepath.Join(root, "bundle.yaml")
-	data, err := os.ReadFile(manifest)
+func (r *Resolver) Read(path string) ([]byte, error) {
+	fullPath, err := r.Resolve(path)
 	if err != nil {
-		return filepath.Base(root)
+		return nil, err
 	}
-	var manifestData struct {
-		Name string `yaml:"name"`
+	return os.ReadFile(fullPath)
+}
+
+func (r *Resolver) TemplatePaths(name string) []string {
+	exts := []string{".html", ".tmpl", ".gohtml", ".tpl"}
+	paths := make([]string, 0)
+	for _, ext := range exts {
+		paths = append(paths, name+ext)
 	}
-	if err := yaml.Unmarshal(data, &manifestData); err != nil {
-		return filepath.Base(root)
+	return paths
+}
+
+func (r *Resolver) FindTemplate(name string) (string, error) {
+	for _, path := range r.TemplatePaths(name) {
+		if fullPath, err := r.Resolve(path); err == nil {
+			return fullPath, nil
+		}
 	}
-	if name := strings.TrimSpace(manifestData.Name); name != "" {
-		return name
+	return "", os.ErrNotExist
+}
+
+func (r *Resolver) IsAbsolute(path string) bool {
+	return filepath.IsAbs(path)
+}
+
+func (r *Resolver) Join(elem ...string) string {
+	return filepath.Join(elem...)
+}
+
+func (r *Resolver) Ext(name string) string {
+	return filepath.Ext(name)
+}
+
+func (r *Resolver) Base(name string) string {
+	return filepath.Base(name)
+}
+
+func (r *Resolver) Dir(name string) string {
+	return filepath.Dir(name)
+}
+
+func (r *Resolver) Clean(name string) string {
+	return filepath.Clean(name)
+}
+
+func (r *Resolver) Rel(base, target string) (string, error) {
+	return filepath.Rel(base, target)
+}
+
+func (r *Resolver) Split(name string) (dir, file string) {
+	return filepath.Split(name)
+}
+
+func (r *Resolver) Match(pattern, name string) (bool, error) {
+	return filepath.Match(pattern, name)
+}
+
+func (r *Resolver) Walk(root string, fn filepath.WalkFunc) error {
+	for _, rootPath := range r.roots {
+		fullRoot := filepath.Join(rootPath, root)
+		filepath.Walk(fullRoot, fn)
 	}
-	return filepath.Base(root)
+	return nil
+}
+
+func (r *Resolver) GetRoots() []string {
+	return r.roots
+}
+
+func (r *Resolver) Normalize(name string) string {
+	return strings.ReplaceAll(name, "\\", "/")
 }

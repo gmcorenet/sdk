@@ -1,4 +1,4 @@
-package gmcorerouter
+package gmcore_router
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type routeContextKey string
@@ -140,11 +138,17 @@ func (r *Router) NamedRoutesSorted() []Route {
 }
 
 func matchPath(pattern, path string) (map[string]string, bool) {
-	pp := split(pattern)
-	cp := split(path)
+	pp, pTrailing := splitWithTrailing(pattern)
+	cp, cTrailing := splitWithTrailing(path)
+
 	if len(pp) != len(cp) {
 		return nil, false
 	}
+
+	if len(pp) > 0 && !pTrailing && cTrailing {
+		return nil, false
+	}
+
 	params := map[string]string{}
 	for i := range pp {
 		if key, value, ok := matchSegmentParam(pp[i], cp[i]); ok {
@@ -158,6 +162,23 @@ func matchPath(pattern, path string) (map[string]string, bool) {
 	return params, true
 }
 
+func splitWithTrailing(path string) ([]string, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" {
+		return []string{}, false
+	}
+	hasTrailing := strings.HasSuffix(path, "/")
+	return strings.Split(strings.Trim(path, "/"), "/"), hasTrailing
+}
+
+func split(path string) []string {
+	path = strings.TrimSpace(path)
+	if path == "" || path == "/" {
+		return []string{}
+	}
+	return strings.Split(strings.Trim(path, "/"), "/")
+}
+
 func matchSegmentParam(pattern, value string) (string, string, bool) {
 	open := strings.Index(pattern, "{")
 	close := strings.Index(pattern, "}")
@@ -167,19 +188,14 @@ func matchSegmentParam(pattern, value string) (string, string, bool) {
 	prefix := pattern[:open]
 	key := strings.TrimSpace(pattern[open+1 : close])
 	suffix := pattern[close+1:]
-	if key == "" || !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, suffix) {
+	if key == "" || !strings.HasPrefix(value, prefix) {
+		return "", "", false
+	}
+	if suffix != "" && !strings.HasSuffix(value, suffix) {
 		return "", "", false
 	}
 	param := strings.TrimSuffix(strings.TrimPrefix(value, prefix), suffix)
 	return key, param, true
-}
-
-func split(path string) []string {
-	path = strings.TrimSpace(path)
-	if path == "" || path == "/" {
-		return []string{}
-	}
-	return strings.Split(strings.Trim(path, "/"), "/")
 }
 
 func normalizePrefix(path string) string {

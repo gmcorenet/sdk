@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type PrimaryKeyType string

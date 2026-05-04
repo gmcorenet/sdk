@@ -1,4 +1,4 @@
-package gmcoreevents
+package gmcore_events
 
 import (
 	"context"
@@ -40,18 +40,8 @@ func (b *Bus) SubscribeOnce(name string, listener Listener) Unsubscribe {
 		return func() {}
 	}
 	once := sync.Once{}
-	used := false
-	mu := sync.Mutex{}
 
 	entry := b.subscribeInternal(name, func(ctx context.Context, event interface{}) error {
-		mu.Lock()
-		if used {
-			mu.Unlock()
-			return nil
-		}
-		used = true
-		mu.Unlock()
-
 		var err error
 		once.Do(func() {
 			err = listener(ctx, event)
@@ -60,13 +50,6 @@ func (b *Bus) SubscribeOnce(name string, listener Listener) Unsubscribe {
 	})
 
 	return func() {
-		mu.Lock()
-		if used {
-			mu.Unlock()
-			return
-		}
-		used = true
-		mu.Unlock()
 		b.unsubscribe(name, entry.id)
 	}
 }

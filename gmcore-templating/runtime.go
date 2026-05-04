@@ -1,4 +1,4 @@
-package gmcoretemplating
+package gmcore_templating
 
 import (
 	"encoding/json"

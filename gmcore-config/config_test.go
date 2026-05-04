@@ -1,4 +1,4 @@
-package gmcoreconfig
+package gmcore_config
 
 import (
 	"os"

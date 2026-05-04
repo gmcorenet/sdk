@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	gmcoreform "gmcore-form"
+	gmcore_form "github.com/gmcorenet/sdk/gmcore-form"
 )
 
 type stubBackend struct{}

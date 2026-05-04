@@ -1,4 +1,4 @@
-package gmcorebundle
+package gmcore_bundle
 
 import "testing"
 

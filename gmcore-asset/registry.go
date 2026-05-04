@@ -1,4 +1,4 @@
-package gmcoreasset
+package gmcore_asset
 
 import (
 	"fmt"

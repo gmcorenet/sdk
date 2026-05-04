@@ -1,4 +1,4 @@
-package gmcoresettings
+package gmcore_settings
 
 import (
 	"context"

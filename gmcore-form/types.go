@@ -1,4 +1,4 @@
-package gmcoreform
+package gmcore_form
 
 type InputType string
 

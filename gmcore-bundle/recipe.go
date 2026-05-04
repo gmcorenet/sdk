@@ -1,4 +1,4 @@
-package gmcorebundle
+package gmcore_bundle
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gmcoreinstaller "gmcore-installer"
+	gmcore_installer "github.com/gmcorenet/sdk/gmcore-installer"
 	"gopkg.in/yaml.v3"
 )
 
@@ -116,7 +116,7 @@ func legacyUninstallSteps(manifest Manifest) []RecipeStep {
 }
 
 func executeRecipeSteps(bundleRoot, appRoot string, steps []RecipeStep) error {
-	return gmcoreinstaller.Runner{
+	return gmcore_installer.Runner{
 		SourceRoot: bundleRoot,
 		TargetRoot: appRoot,
 		Stdout:     os.Stdout,
@@ -126,7 +126,7 @@ func executeRecipeSteps(bundleRoot, appRoot string, steps []RecipeStep) error {
 }
 
 func executeRecipeStep(bundleRoot, appRoot string, step RecipeStep) error {
-	return gmcoreinstaller.Runner{
+	return gmcore_installer.Runner{
 		SourceRoot: bundleRoot,
 		TargetRoot: appRoot,
 		Stdout:     os.Stdout,
@@ -135,16 +135,16 @@ func executeRecipeStep(bundleRoot, appRoot string, step RecipeStep) error {
 	}.RunStep(toInstallerStep(step))
 }
 
-func toInstallerSteps(steps []RecipeStep) []gmcoreinstaller.Step {
-	out := make([]gmcoreinstaller.Step, 0, len(steps))
+func toInstallerSteps(steps []RecipeStep) []gmcore_installer.Step {
+	out := make([]gmcore_installer.Step, 0, len(steps))
 	for _, step := range steps {
 		out = append(out, toInstallerStep(step))
 	}
 	return out
 }
 
-func toInstallerStep(step RecipeStep) gmcoreinstaller.Step {
-	return gmcoreinstaller.Step{
+func toInstallerStep(step RecipeStep) gmcore_installer.Step {
+	return gmcore_installer.Step{
 		Action:               step.Action,
 		From:                 step.From,
 		To:                   step.To,

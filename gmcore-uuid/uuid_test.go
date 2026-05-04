@@ -1,4 +1,4 @@
-package gmcoreuuid
+package gmcore_uuid
 
 import (
 	"testing"

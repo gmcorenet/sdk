@@ -1,4 +1,4 @@
-package gmcoreview
+package gmcore_view
 
 import (
 	"context"

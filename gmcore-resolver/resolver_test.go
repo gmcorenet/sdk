@@ -1,4 +1,4 @@
-package gmcoreresolver
+package gmcore_resolver
 
 import (
 	"os"

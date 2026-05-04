@@ -1,4 +1,4 @@
-package gmcorevalidation
+package gmcore_validation
 
 import "testing"
 

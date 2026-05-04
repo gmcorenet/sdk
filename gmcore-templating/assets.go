@@ -1,4 +1,4 @@
-package gmcoretemplating
+package gmcore_templating
 
 type AssetHelper struct {
 	CSSFunc       func() string

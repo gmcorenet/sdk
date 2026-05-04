@@ -1,4 +1,4 @@
-package gmcoreview
+package gmcore_view
 
 import (
 	"context"
@@ -9,9 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	gmcorei18n "gmcore-i18n"
-	gmcoreresolver "gmcore-resolver"
-	gmcoretemplating "gmcore-templating"
+	gmcore_i18n "github.com/gmcorenet/sdk/gmcore-i18n"
+	gmcore_templating "github.com/gmcorenet/sdk/gmcore-templating"
 )
 
 type Config struct {
@@ -23,7 +22,7 @@ type Config struct {
 	Translate           func(string) string
 	TranslateWithLocale func(string, string) string
 	TranslateWithDomain func(string, string, string) string
-	TranslateChoice     func(string, string, int, gmcorei18n.Params) string
+	TranslateChoice     func(string, string, int, gmcore_i18n.Params) string
 	Translations        func(string) map[string]string
 	TranslationsSelect  func(string, string, []string) map[string]string
 	AssetURL            func(string) string
@@ -97,7 +96,7 @@ func (r *Renderer) RenderContext(ctx context.Context, name string, data map[stri
 	payload["Locale"] = currentLocale
 
 	safeCtx := contextWithoutCancel(ctx)
-	engine := gmcoretemplating.New(gmcoretemplating.Config{
+	engine := gmcore_templating.New(gmcore_templating.Config{
 		AppRoot:     r.cfg.AppRoot,
 		SystemRoot:  r.cfg.SystemRoot,
 		BundleRoots: r.cfg.BundleRoots,
@@ -331,13 +330,13 @@ func mergeTemplatePayload(base map[string]interface{}, extra ...interface{}) map
 	return merged
 }
 
-func mergeI18nParams(extra ...interface{}) gmcorei18n.Params {
-	params := gmcorei18n.Params{}
+func mergeI18nParams(extra ...interface{}) gmcore_i18n.Params {
+	params := gmcore_i18n.Params{}
 	if len(extra) == 0 || extra[0] == nil {
 		return params
 	}
 	switch current := extra[0].(type) {
-	case gmcorei18n.Params:
+	case gmcore_i18n.Params:
 		for key, value := range current {
 			params[key] = value
 		}
@@ -353,11 +352,11 @@ func mergeI18nParams(extra ...interface{}) gmcorei18n.Params {
 	return params
 }
 
-func interpolateTranslatedValue(value string, params gmcorei18n.Params) string {
+func interpolateTranslatedValue(value string, params gmcore_i18n.Params) string {
 	if len(params) == 0 {
 		return value
 	}
-	return gmcorei18n.Params(params).Interpolate(value)
+	return gmcore_i18n.Params(params).Interpolate(value)
 }
 
 var jsGlobalTargetPattern = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$`)
@@ -373,10 +372,16 @@ func safeJSGlobalTarget(fallback string, values ...string) string {
 	return current
 }
 
-func ResolveTemplate(cfg Config, name string) (gmcoreresolver.ResolvedFile, bool) {
-	return gmcoretemplating.ResolveTemplate(gmcoretemplating.Config{
+type viewResolvedFile struct {
+	Path   string
+	Source string
+}
+
+func ResolveTemplate(cfg Config, name string) (viewResolvedFile, bool) {
+	stub, ok := gmcore_templating.ResolveTemplate(gmcore_templating.Config{
 		AppRoot:     cfg.AppRoot,
 		SystemRoot:  cfg.SystemRoot,
 		BundleRoots: cfg.BundleRoots,
 	}, name)
+	return viewResolvedFile{Path: stub.Path, Source: stub.Source}, ok
 }

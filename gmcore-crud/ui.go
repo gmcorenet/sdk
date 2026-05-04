@@ -1,11 +1,11 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"encoding/json"
 	"fmt"
 	"html/template"
 
-	gmcoreform "gmcore-form"
+	gmcore_form "github.com/gmcorenet/sdk/gmcore-form"
 )
 
 type UIIndexOptions struct {
@@ -14,8 +14,8 @@ type UIIndexOptions struct {
 	BasePath          string
 	CurrentUser       interface{}
 	Features          interface{}
-	Fields            []gmcoreform.Field
-	Buttons           []gmcoreform.Button
+	Fields            []gmcore_form.Field
+	Buttons           []gmcore_form.Button
 	PrimaryKey        string
 	Partials          map[string]string
 	IconRegistry      map[string]string
@@ -135,8 +135,7 @@ window.__crudConfig = {
   partials: %s,
   iconRegistry: %s,
   features: %s,
-  labels: %s,
-  csrfToken: %q
+  labels: %s
 };
 window.__crudRoot = document.currentScript && document.currentScript.parentElement ? document.currentScript.parentElement : null;
 </script>
@@ -154,7 +153,6 @@ window.__crudRoot = document.currentScript && document.currentScript.parentEleme
 		iconRegistryJSON,
 		featuresJSON,
 		labelsJSON,
-		opts.CSRFToken,
 		crudClientScript(),
 	))
 }

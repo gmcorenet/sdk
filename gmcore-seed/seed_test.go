@@ -1,4 +1,4 @@
-package gmcoreseed
+package gmcore_seed
 
 import (
 	"testing"

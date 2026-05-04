@@ -1,4 +1,4 @@
-package gmcorelifecycle
+package gmcore_lifecycle
 
 import (
 	"archive/tar"

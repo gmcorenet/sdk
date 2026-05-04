@@ -1,4 +1,4 @@
-package gmcoreform
+package gmcore_form
 
 type Option struct {
 	Value       string `json:"value"`

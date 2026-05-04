@@ -1,4 +1,4 @@
-package log
+package gmcore_log
 
 import (
 	"encoding/json"
@@ -82,8 +82,10 @@ func (l *Logger) WithField(key string, value interface{}) *Logger {
 		fields[k] = v
 	}
 	fields[key] = value
+	handlers := make([]Handler, len(l.handlers))
+	copy(handlers, l.handlers)
 	return &Logger{
-		handlers: l.handlers,
+		handlers: handlers,
 		level:    l.level,
 		fields:   fields,
 	}
@@ -99,7 +101,9 @@ func (l *Logger) WithFields(fields map[string]interface{}) *Logger {
 	for k, v := range fields {
 		m[k] = v
 	}
-	return &Logger{handlers: l.handlers, level: l.level, fields: m}
+	handlers := make([]Handler, len(l.handlers))
+	copy(handlers, l.handlers)
+	return &Logger{handlers: handlers, level: l.level, fields: m}
 }
 
 func (l *Logger) log(level Level, msg string, args ...interface{}) {
@@ -193,7 +197,11 @@ func (f JSONFormat) FormatString(e Entry) string {
 	for k, v := range e.Fields {
 		m[k] = v
 	}
-	b, _ := json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		return fmt.Sprintf(`{"time":"%s","level":"%s","message":"%s","error":"json_marshal_failed"}`,
+			e.Time.Format(time.RFC3339), e.Level.String(), e.Message)
+	}
 	return string(b)
 }
 
@@ -283,9 +291,6 @@ func (h *RotatingFileHandler) Handle(e Entry) {
 func (h *RotatingFileHandler) rotate() {
 	h.file.Close()
 
-	oldName := h.Filename + ".old"
-	os.Rename(h.Filename, oldName)
-
 	if h.MaxBackups > 0 {
 		backup := fmt.Sprintf("%s.%d", h.Filename, h.MaxBackups)
 		os.Remove(backup)
@@ -294,10 +299,22 @@ func (h *RotatingFileHandler) rotate() {
 			dst := fmt.Sprintf("%s.%d", h.Filename, i+1)
 			os.Rename(src, dst)
 		}
-		os.Rename(oldName, h.Filename+".1")
 	}
 
-	h.file, _ = os.OpenFile(h.Filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	tmpName := h.Filename + ".tmp"
+	os.Rename(h.Filename, tmpName)
+
+	if h.MaxBackups > 0 {
+		os.Rename(tmpName, h.Filename+".1")
+	} else {
+		os.Remove(tmpName)
+	}
+
+	var err error
+	h.file, err = os.OpenFile(h.Filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "log: failed to reopen file after rotation: %v\n", err)
+	}
 	h.currentSize = 0
 }
 

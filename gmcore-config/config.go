@@ -1,4 +1,4 @@
-package gmcoreconfig
+package gmcore_config
 
 import (
 	"fmt"
@@ -94,13 +94,18 @@ func LoadAppEnv(appPath string) map[string]string {
 	values := LoadEnvFiles(candidates...)
 	appPrefix := strings.ToUpper(strings.ReplaceAll(appName, "-", "_")) + "_"
 	prefixes := []string{appPrefix, "GMCORE_" + appPrefix}
+
+	additions := make(map[string]string)
 	for key, value := range values {
 		for _, prefix := range prefixes {
 			if strings.HasPrefix(key, prefix) {
-				values["APP_"+strings.TrimPrefix(key, prefix)] = value
+				additions["APP_"+strings.TrimPrefix(key, prefix)] = value
 				break
 			}
 		}
+	}
+	for k, v := range additions {
+		values[k] = v
 	}
 	return values
 }

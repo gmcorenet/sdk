@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	gmcoreuuid "gmcore-uuid"
+	gmcore_uuid "github.com/gmcorenet/sdk/gmcore-uuid"
 	"gorm.io/gorm"
 )
 
@@ -91,7 +91,7 @@ func (b *ORMBackend) Count(ctx context.Context, cfg Config, params ListParams) (
 }
 
 func (b *ORMBackend) Get(ctx context.Context, cfg Config, key string, scope map[string]interface{}) (Record, error) {
-	if err := gmcoreuuid.IsValidPrimaryKey(key, gmcoreuuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
+	if err := gmcore_uuid.IsValidPrimaryKey(key, gmcore_uuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +102,7 @@ func (b *ORMBackend) Get(ctx context.Context, cfg Config, key string, scope map[
 	}
 
 	query = b.applySoftDeleteScope(query)
-	query = query.Where(fmt.Sprintf("%s = ?", pkField), key)
+	query = query.Where(map[string]interface{}{pkField: key})
 
 	var record map[string]interface{}
 	if err := query.First(&record).Error; err != nil {
@@ -130,7 +130,7 @@ func (b *ORMBackend) Create(ctx context.Context, cfg Config, record Record, scop
 }
 
 func (b *ORMBackend) Update(ctx context.Context, cfg Config, key string, record Record, scope map[string]interface{}) (Record, error) {
-	if err := gmcoreuuid.IsValidPrimaryKey(key, gmcoreuuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
+	if err := gmcore_uuid.IsValidPrimaryKey(key, gmcore_uuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
 		return nil, err
 	}
 
@@ -141,7 +141,7 @@ func (b *ORMBackend) Update(ctx context.Context, cfg Config, key string, record 
 
 	var updatedRecord Record
 	err := b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Table(b.tableName).Where(fmt.Sprintf("%s = ?", pkField), key).Updates(record)
+		res := tx.Table(b.tableName).Where(map[string]interface{}{pkField: key}).Updates(record)
 		if res.Error != nil {
 			return translateDBError(res.Error)
 		}
@@ -158,7 +158,7 @@ func (b *ORMBackend) Update(ctx context.Context, cfg Config, key string, record 
 }
 
 func (b *ORMBackend) Delete(ctx context.Context, cfg Config, key string, scope map[string]interface{}) error {
-	if err := gmcoreuuid.IsValidPrimaryKey(key, gmcoreuuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
+	if err := gmcore_uuid.IsValidPrimaryKey(key, gmcore_uuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
 		return err
 	}
 
@@ -168,7 +168,7 @@ func (b *ORMBackend) Delete(ctx context.Context, cfg Config, key string, scope m
 	}
 
 	return b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Table(b.tableName).Where(fmt.Sprintf("%s = ?", pkField), key)
+		query := tx.Table(b.tableName).Where(map[string]interface{}{pkField: key})
 		if !b.softDelete {
 			return query.Delete(nil).Error
 		}
@@ -186,7 +186,7 @@ func (b *ORMBackend) Bulk(ctx context.Context, cfg Config, action string, keys [
 	}
 
 	for _, key := range keys {
-		if err := gmcoreuuid.IsValidPrimaryKey(key, gmcoreuuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
+		if err := gmcore_uuid.IsValidPrimaryKey(key, gmcore_uuid.PrimaryKeyType(cfg.PrimaryKeyType)); err != nil {
 			return err
 		}
 	}
@@ -197,7 +197,7 @@ func (b *ORMBackend) Bulk(ctx context.Context, cfg Config, action string, keys [
 	}
 
 	return b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Table(b.tableName).Where(fmt.Sprintf("%s IN ?", pkField), keys)
+		query := tx.Table(b.tableName).Where(pkField+" IN ?", keys)
 		if !b.softDelete {
 			return query.Delete(nil).Error
 		}
@@ -212,7 +212,7 @@ func (b *ORMBackend) applyCountSpec(query *gorm.DB, cfg Config, params ListParam
 		orArgs := []interface{}{}
 		for _, field := range cfg.Fields {
 			if field.Searchable && isValidIdentifier(field.Name) {
-				orConditions = append(orConditions, fmt.Sprintf("%s LIKE ?", field.Name))
+				orConditions = append(orConditions, field.Name+" LIKE ?")
 				orArgs = append(orArgs, searchTerm)
 			}
 		}
@@ -225,7 +225,7 @@ func (b *ORMBackend) applyCountSpec(query *gorm.DB, cfg Config, params ListParam
 		if value == "" || !isValidIdentifier(field) {
 			continue
 		}
-		query = query.Where(fmt.Sprintf("%s = ?", field), value)
+		query = query.Where(map[string]interface{}{field: value})
 	}
 
 	for _, filter := range params.ColumnFilters {
@@ -235,23 +235,23 @@ func (b *ORMBackend) applyCountSpec(query *gorm.DB, cfg Config, params ListParam
 		}
 		switch filter.Operator {
 		case FilterOperatorEq:
-			query = query.Where(fmt.Sprintf("%s = ?", field), filter.Value)
+			query = query.Where(map[string]interface{}{field: filter.Value})
 		case FilterOperatorNeq:
-			query = query.Where(fmt.Sprintf("%s != ?", field), filter.Value)
+			query = query.Where(field+" != ?", filter.Value)
 		case FilterOperatorLike:
-			query = query.Where(fmt.Sprintf("%s LIKE ?", field), "%"+filter.Value+"%")
+			query = query.Where(field+" LIKE ?", "%"+filter.Value+"%")
 		case FilterOperatorGt:
-			query = query.Where(fmt.Sprintf("%s > ?", field), filter.Value)
+			query = query.Where(field+" > ?", filter.Value)
 		case FilterOperatorGte:
-			query = query.Where(fmt.Sprintf("%s >= ?", field), filter.Value)
+			query = query.Where(field+" >= ?", filter.Value)
 		case FilterOperatorLt:
-			query = query.Where(fmt.Sprintf("%s < ?", field), filter.Value)
+			query = query.Where(field+" < ?", filter.Value)
 		case FilterOperatorLte:
-			query = query.Where(fmt.Sprintf("%s <= ?", field), filter.Value)
+			query = query.Where(field+" <= ?", filter.Value)
 		case FilterOperatorIn:
-			query = query.Where(fmt.Sprintf("%s IN ?", field), filter.Values)
+			query = query.Where(field+" IN ?", filter.Values)
 		case FilterOperatorIsNull:
-			query = query.Where(fmt.Sprintf("%s IS NULL", field))
+			query = query.Where(field + " IS NULL")
 		}
 	}
 

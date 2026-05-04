@@ -1,4 +1,4 @@
-package gmcorecert
+package gmcore_cert
 
 import (
 	"crypto/rand"
@@ -19,8 +19,6 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
-
-	gmerr "github.com/gmcorenet/gmcore-error"
 )
 
 type Config struct {
@@ -293,7 +291,7 @@ func generateSelfSignedCertificate(host, certFile, keyFile string) error {
 	certPEM := pemEncode("CERTIFICATE", der)
 	keyPEM := pemEncodePKCS1(privateKey)
 
-	if err := os.WriteFile(certFile, certPEM, 0o644); err != nil {
+	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
 		return err
 	}
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {

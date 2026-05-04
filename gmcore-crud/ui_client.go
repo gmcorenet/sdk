@@ -1,4 +1,4 @@
-package gmcorecrud
+package gmcore_crud
 
 func crudClientScript() string {
 	return crudClientCoreScript() +
