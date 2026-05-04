@@ -10,7 +10,8 @@ import (
 func TestManifestLoadAndPackageURL(t *testing.T) {
 	root := t.TempDir()
 	manifestPath := filepath.Join(root, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(`{"/css/app.css":"/css/app.123.css"}`), 0o644); err != nil {
+	manifestJSON := `{"assets":{"/css/app.css":{"version":"/css/app.123.css"}}}`
+	if err := os.WriteFile(manifestPath, []byte(manifestJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err := LoadManifestFile(manifestPath)

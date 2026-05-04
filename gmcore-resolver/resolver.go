@@ -12,6 +12,11 @@ type Config struct {
 	BundleRoots []string
 }
 
+type ResolvedFile struct {
+	Path   string
+	Source string
+}
+
 type Resolver struct {
 	roots []string
 }
@@ -143,4 +148,101 @@ func (r *Resolver) GetRoots() []string {
 
 func (r *Resolver) Normalize(name string) string {
 	return strings.ReplaceAll(name, "\\", "/")
+}
+
+func ResolveRelativeFile(cfg Config, path string) (*ResolvedFile, bool) {
+	path = cleanRelative(path)
+	if path == "" {
+		return nil, false
+	}
+
+	if cfg.AppRoot != "" {
+		fullPath := filepath.Join(cfg.AppRoot, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			return &ResolvedFile{Path: fullPath, Source: "app"}, true
+		}
+	}
+
+	for _, bundleRoot := range cfg.BundleRoots {
+		fullPath := filepath.Join(bundleRoot, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			source := bundleSource(bundleRoot)
+			return &ResolvedFile{Path: fullPath, Source: source}, true
+		}
+	}
+
+	if cfg.SystemRoot != "" {
+		fullPath := filepath.Join(cfg.SystemRoot, path)
+		if info, err := os.Stat(fullPath); err == nil && !info.IsDir() {
+			return &ResolvedFile{Path: fullPath, Source: "system"}, true
+		}
+	}
+
+	return nil, false
+}
+
+func ResolveTemplate(cfg Config, path string) (*ResolvedFile, bool) {
+	path = cleanRelative(path)
+	if path == "" {
+		return nil, false
+	}
+
+	templatesPath := filepath.Join("templates", path)
+	if rf, ok := ResolveRelativeFile(cfg, templatesPath); ok {
+		return rf, true
+	}
+
+	return ResolveRelativeFile(cfg, path)
+}
+
+func ResolveSource(cfg Config, path string) (*ResolvedFile, bool) {
+	path = cleanRelative(path)
+	if path == "" {
+		return nil, false
+	}
+
+	internalPath := filepath.Join("internal", path)
+	if rf, ok := ResolveRelativeFile(cfg, internalPath); ok {
+		return rf, true
+	}
+
+	return ResolveRelativeFile(cfg, path)
+}
+
+func cleanRelative(path string) string {
+	path = filepath.ToSlash(path)
+	path = strings.TrimPrefix(path, "/")
+	path = strings.TrimLeft(path, " ")
+	for {
+		newPath := filepath.Clean(path)
+		if newPath == path {
+			break
+		}
+		path = newPath
+	}
+	if path == "." {
+		return ""
+	}
+	return path
+}
+
+func bundleSource(bundleDir string) string {
+	if bundleDir == "" {
+		return "bundle"
+	}
+	manifestPath := filepath.Join(bundleDir, "bundle.yaml")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return filepath.Base(bundleDir)
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "name:") {
+			name := strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+			if name != "" {
+				return name
+			}
+		}
+	}
+	return filepath.Base(bundleDir)
 }

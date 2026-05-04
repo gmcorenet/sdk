@@ -104,9 +104,134 @@ func Validate(values map[string]interface{}, schema Schema) Errors {
 }
 
 func ValidateStruct(data interface{}, schema Schema) Errors {
-	values := map[string]interface{}{}
-	_ = data
+	values := extractStructFields(data)
 	return Validate(values, schema)
+}
+
+func extractStructFields(data interface{}) map[string]interface{} {
+	values := make(map[string]interface{})
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return values
+	}
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		value := v.Field(i).Interface()
+		formTag := field.Tag.Get("form")
+		name := field.Name
+		if formTag != "" {
+			parts := strings.Split(formTag, ",")
+			for _, part := range parts {
+				if strings.HasPrefix(part, "name=") {
+					name = strings.TrimPrefix(part, "name=")
+					break
+				}
+			}
+		}
+		values[name] = value
+	}
+	return values
+}
+
+func OneOf(values ...string) Rule {
+	return In(values...)
+}
+
+func MatchField(fieldName string) Rule {
+	return &MatchFieldRule{FieldName: fieldName}
+}
+
+type MatchFieldRule struct {
+	FieldName string
+	ctx       map[string]interface{}
+}
+
+func (r *MatchFieldRule) SetValidationContext(values map[string]interface{}) {
+	r.ctx = values
+}
+
+func (r *MatchFieldRule) Validate(field string, value interface{}) string {
+	if r.ctx == nil {
+		return ""
+	}
+	otherValue := r.ctx[r.FieldName]
+	if fmt.Sprint(value) != fmt.Sprint(otherValue) {
+		return field + ": must match " + r.FieldName
+	}
+	return ""
+}
+
+func SchemaFromStruct(data interface{}) (Schema, error) {
+	schema := make(Schema)
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return schema, nil
+	}
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		validateTag := field.Tag.Get("validate")
+		if validateTag == "" {
+			continue
+		}
+		formTag := field.Tag.Get("form")
+		name := field.Name
+		if formTag != "" {
+			parts := strings.Split(formTag, ",")
+			for _, part := range parts {
+				if strings.HasPrefix(part, "name=") {
+					name = strings.TrimPrefix(part, "name=")
+					break
+				}
+			}
+		}
+		rules := parseValidateTag(validateTag)
+		if len(rules) > 0 {
+			schema[name] = rules
+		}
+	}
+	return schema, nil
+}
+
+func parseValidateTag(tag string) []Rule {
+	rules := []Rule{}
+	parts := strings.Split(tag, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.HasPrefix(part, "required") {
+			rules = append(rules, Required())
+		} else if strings.HasPrefix(part, "email") {
+			rules = append(rules, Email())
+		} else if strings.HasPrefix(part, "minLength=") {
+			val := strings.TrimPrefix(part, "minLength=")
+			if n, err := strconv.Atoi(val); err == nil {
+				rules = append(rules, MinLength(n))
+			}
+		} else if strings.HasPrefix(part, "oneof=") {
+			val := strings.TrimPrefix(part, "oneof=")
+			opts := strings.Split(val, "|")
+			rules = append(rules, In(opts...))
+		}
+	}
+	return rules
+}
+
+func ValidateTaggedStruct(data interface{}) Errors {
+	schema, err := SchemaFromStruct(data)
+	if err != nil {
+		return Errors{"_": []string{err.Error()}}
+	}
+	return ValidateStruct(data, schema)
 }
 
 type RequiredRule struct{}

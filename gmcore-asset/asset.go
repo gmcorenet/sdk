@@ -28,8 +28,11 @@ func (a Asset) IsCommon() bool {
 }
 
 type Manager struct {
-	roots []string
-	cache map[string]*Asset
+	BaseURL  string
+	Manifest *ManifestV1
+	Version  string
+	roots    []string
+	cache    map[string]*Asset
 }
 
 func NewManager(roots ...string) *Manager {
@@ -37,6 +40,22 @@ func NewManager(roots ...string) *Manager {
 		roots: roots,
 		cache: make(map[string]*Asset),
 	}
+}
+
+func (m *Manager) URL(path string) string {
+	if m.Manifest != nil {
+		if resolved, ok := m.Manifest.ResolvePath(path); ok {
+			return m.BaseURL + resolved + "?v=" + m.Version
+		}
+	}
+	if m.Version != "" {
+		return m.BaseURL + path + "?v=" + m.Version
+	}
+	return m.BaseURL + path
+}
+
+func (m *Manager) PackageURL(pkg, path string) string {
+	return m.BaseURL + "/" + pkg + "/" + path
 }
 
 func (m *Manager) AddRoot(root string) {

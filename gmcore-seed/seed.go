@@ -2,15 +2,18 @@ package gmcore_seed
 
 import (
 	"context"
+	"fmt"
+	"time"
 )
 
 type Field struct {
-	Name     string
-	Column   string
-	Type     string
-	Primary  bool
-	Required bool
-	Writable bool
+	Name          string
+	Column        string
+	Type          string
+	Primary       bool
+	Required      bool
+	Writable      bool
+	AutoIncrement bool
 }
 
 type Schema struct {
@@ -19,6 +22,68 @@ type Schema struct {
 	PrimaryKey     string
 	PrimaryKeyType string
 	Fields         []Field
+}
+
+type Options struct {
+	Now        func() time.Time
+	Overrides  map[string]interface{}
+}
+
+func FakeRecord(schema Schema, index int, opts Options) (map[string]interface{}, error) {
+	record := make(map[string]interface{})
+
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+
+	for _, field := range schema.Fields {
+		if field.Primary && field.AutoIncrement {
+			continue
+		}
+		if field.Name == schema.PrimaryKey && schema.PrimaryKeyType == "uuid" {
+			record[field.Name] = fmt.Sprintf("00000000-0000-4000-8000-00000000%04d", index)
+			continue
+		}
+		if field.Name == schema.PrimaryKey && schema.PrimaryKeyType == "int" {
+			record[field.Name] = index + 1
+			continue
+		}
+		if override, ok := opts.Overrides[field.Name]; ok {
+			record[field.Name] = override
+			continue
+		}
+		switch field.Type {
+		case "email":
+			record[field.Name] = fmt.Sprintf("user%06d@example.test", index+1)
+		case "string":
+			record[field.Name] = fmt.Sprintf("string_%d", index)
+		case "int":
+			record[field.Name] = index + 1
+		case "datetime", "timestamp":
+			record[field.Name] = opts.Now().Format(time.RFC3339)
+		case "json":
+			record[field.Name] = `["ROLE_USER"]`
+		case "bool":
+			record[field.Name] = index%2 == 0
+		default:
+			record[field.Name] = nil
+		}
+	}
+
+	return record, nil
+}
+
+func (s Schema) Normalized() Schema {
+	normalized := s
+	if normalized.TableName == "" {
+		normalized.TableName = normalized.Name
+	}
+	for i := range normalized.Fields {
+		if normalized.Fields[i].Column == "" {
+			normalized.Fields[i].Column = normalized.Fields[i].Name
+		}
+	}
+	return normalized
 }
 
 type Seeder interface {

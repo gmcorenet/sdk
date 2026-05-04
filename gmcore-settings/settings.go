@@ -192,6 +192,7 @@ type Store interface {
 	List() []StoreItem
 	Get(key string) (StoreItem, bool)
 	SetWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error
+	SeedWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error
 }
 
 type memoryStore struct {
@@ -223,6 +224,33 @@ func (s *memoryStore) Get(key string) (StoreItem, bool) {
 func (s *memoryStore) SetWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.items[key] = StoreItem{
+		Key:         key,
+		Value:       value,
+		Type:        valueType,
+		Description: description,
+		Editable:    editable,
+		Encrypted:   encrypted,
+	}
+	return nil
+}
+
+func (s *memoryStore) SeedWithOptions(ctx context.Context, key, value, valueType, description string, editable, encrypted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, ok := s.items[key]; ok {
+		s.items[key] = StoreItem{
+			Key:         key,
+			Value:       existing.Value,
+			Type:        valueType,
+			Description: description,
+			Editable:    editable,
+			Encrypted:   encrypted,
+		}
+		return nil
+	}
+
 	s.items[key] = StoreItem{
 		Key:         key,
 		Value:       value,

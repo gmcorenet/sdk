@@ -92,8 +92,11 @@ type Manifest struct {
 
 func (m Manifest) BootstrapImportPath() string {
 	importPath := m.Module
+	if importPath == "" {
+		importPath = m.Name
+	}
 	if m.Bootstrap.Import != "" {
-		importPath = m.Module + "/" + m.Bootstrap.Import
+		importPath = importPath + "/" + m.Bootstrap.Import
 	}
 	if strings.HasPrefix(importPath, "gmcore/") {
 		importPath = strings.Replace(importPath, "gmcore/", "gmcore-", 1)

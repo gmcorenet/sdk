@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -33,10 +34,21 @@ func ResolveAppLayout(root string) (*AppLayout, error) {
 	_, err = os.Stat(manifestPath)
 	packaged := os.IsNotExist(err)
 
+	manifestRoot := absRoot
+	buildRoot := absRoot
+
+	if packaged {
+		currentPath := filepath.Join(absRoot, "current")
+		if _, err := os.Stat(filepath.Join(currentPath, "app.yaml")); err == nil {
+			manifestRoot = currentPath
+			buildRoot = currentPath
+		}
+	}
+
 	layout := &AppLayout{
 		Root:         absRoot,
-		ManifestRoot: absRoot,
-		BuildRoot:    absRoot,
+		ManifestRoot: manifestRoot,
+		BuildRoot:    buildRoot,
 		EnvRoot:      absRoot,
 		Packaged:     packaged,
 	}
@@ -188,4 +200,41 @@ func (t *TimerHook) Start(ctx context.Context, cancel func()) {
 			return
 		}
 	}
+}
+
+type Paths struct {
+	InstancePath string
+	BinPath      string
+}
+
+func NewPaths(binPath string) *Paths {
+	return &Paths{
+		InstancePath: filepath.Join(filepath.Dir(binPath), "app.instance.json"),
+		BinPath:      binPath,
+	}
+}
+
+type InstallOptions struct {
+	ArchivePath string
+	TargetDir   string
+}
+
+func Install(opts InstallOptions) (string, string, error) {
+	if opts.TargetDir == "" {
+		return "", "", errors.New("target directory required")
+	}
+	return "", "", nil
+}
+
+func parseProcEnviron(data []byte) map[string]string {
+	result := make(map[string]string)
+	parts := strings.Split(string(data), "\x00")
+	for _, part := range parts {
+		if idx := strings.Index(part, "="); idx != -1 {
+			key := part[:idx]
+			value := part[idx+1:]
+			result[key] = value
+		}
+	}
+	return result
 }
