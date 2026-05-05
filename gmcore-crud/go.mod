@@ -17,7 +17,7 @@ require (
 )
 
 replace (
-	github.com/gmcorenet/gmcore-error => ../gmcore-error
+	github.com/gmcorenet/sdk/gmcore-error => ../gmcore-error
 	github.com/gmcorenet/sdk/gmcore-crud => .
 	github.com/gmcorenet/sdk/gmcore-form => ../gmcore-form
 	github.com/gmcorenet/sdk/gmcore-orm => ../gmcore-orm

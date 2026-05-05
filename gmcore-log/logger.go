@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	gmerr "github.com/gmcorenet/gmcore-error"
+	gmerr "github.com/gmcorenet/sdk/gmcore-error"
 )
 
 type Level int

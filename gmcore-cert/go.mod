@@ -10,6 +10,6 @@ require (
 )
 
 replace (
-	github.com/gmcorenet/gmcore-error => ../gmcore-error
+	github.com/gmcorenet/sdk/gmcore-error => ../gmcore-error
 	github.com/gmcorenet/sdk/gmcore-cert => .
 )

@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	gmerr "github.com/gmcorenet/gmcore-error"
+	gmerr "github.com/gmcorenet/sdk/gmcore-error"
 )
 
 type Options struct {

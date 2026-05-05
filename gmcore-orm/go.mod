@@ -9,6 +9,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 )
 
-replace github.com/gmcorenet/gmcore-error => ../gmcore-error
+replace github.com/gmcorenet/sdk/gmcore-error => ../gmcore-error
 
 replace github.com/gmcorenet/sdk/gmcore-uid => ../gmcore-uid

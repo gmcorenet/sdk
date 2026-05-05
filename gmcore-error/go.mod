@@ -1,3 +1,3 @@
-module github.com/gmcorenet/gmcore-error
+module github.com/gmcorenet/sdk/gmcore-error
 
 go 1.21
