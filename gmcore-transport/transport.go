@@ -29,12 +29,48 @@ const (
 )
 
 type Config struct {
-	Mode     Mode
-	Path     string
-	Host     string
-	Ports    []int
-	KeysDir  string
-	SelfCert bool
+	Mode     Mode   `yaml:"mode" json:"mode"`
+	Path     string `yaml:"path" json:"path"`
+	Host     string `yaml:"host" json:"host"`
+	Ports    []int  `yaml:"ports" json:"ports"`
+	KeysDir  string `yaml:"keys_dir" json:"keys_dir"`
+	SelfCert bool   `yaml:"self_cert" json:"self_cert"`
+}
+
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file" json:"cert_file"`
+	KeyFile  string `yaml:"key_file" json:"key_file"`
+	CAFile   string `yaml:"ca_file" json:"ca_file"`
+}
+
+type SecurityConfig struct {
+	Type    string `yaml:"type" json:"type"`         // none, hmac, mutual
+	Key     string `yaml:"key" json:"key"`           // for HMAC
+	CertDir string `yaml:"cert_dir" json:"cert_dir"` // for mutual
+}
+
+type ServerConfig struct {
+	Mode     Mode           `yaml:"mode" json:"mode"`
+	UDS      UDSConfig      `yaml:"uds" json:"uds"`
+	TCP      TCPConfig      `yaml:"tcp" json:"tcp"`
+	Security SecurityConfig `yaml:"security" json:"security"`
+}
+
+type UDSConfig struct {
+	Path       string `yaml:"path" json:"path"`
+	Perm       uint32 `yaml:"perm" json:"perm"`
+	Group      string `yaml:"group" json:"group"`
+	AutoRemove bool   `yaml:"auto_remove" json:"auto_remove"`
+}
+
+type TCPConfig struct {
+	Host  string `yaml:"host" json:"host"`
+	Ports []int  `yaml:"ports" json:"ports"`
+}
+
+type FullConfig struct {
+	Server   ServerConfig   `yaml:"server" json:"server"`
+	Security SecurityConfig `yaml:"security" json:"security"`
 }
 
 type Transport struct {

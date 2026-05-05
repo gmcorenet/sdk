@@ -9,6 +9,64 @@ Unified transport layer for gmcore apps supporting both TCP and Unix Domain Sock
 - **Automatic pairing**: App-to-gateway secure pairing
 - **Lifecycle commands**: Start, stop, restart, reload, status via UDS
 - **Pluggable security**: Use HMAC, certificates, or custom security providers
+- **YAML configuration**: Load config from YAML files with env variable support
+
+## Configuration
+
+### YAML Configuration
+
+Create `config/transport.yaml` in your app:
+
+```yaml
+server:
+  mode: both  # uds, tcp, or both
+
+  uds:
+    path: var/socket/app.sock
+    perm: 0660
+    group: gmcore
+    auto_remove: false
+
+  tcp:
+    host: 0.0.0.0
+    ports:
+      - 80
+      - 443
+
+security:
+  type: hmac  # none, hmac, or mutual
+  key: %env(TRANSPORT_SECRET)%
+  cert_dir: var/keys  # for mutual auth
+```
+
+### Environment Variables
+
+Use `%env(VAR_NAME)%` syntax in YAML to inject environment variables:
+
+```yaml
+security:
+  key: %env(TRANSPORT_SECRET)%
+```
+
+Supported env files:
+- `.env`
+- `.env.local`
+- `config/<appname>.env`
+
+### Loading Config
+
+```go
+import "github.com/gmcorenet/sdk/gmcore-transport"
+
+cfg, err := gmcore_transport.LoadConfig("/opt/gmcore/myapp")
+if err != nil {
+    log.Fatal(err)
+}
+
+t := gmcore_transport.New(cfg.ToConfig())
+t.UseSecurity(cfg.ToSecurityProvider())
+t.Listen(ctx)
+```
 
 ## Quick Start
 
@@ -17,11 +75,11 @@ Unified transport layer for gmcore apps supporting both TCP and Unix Domain Sock
 ```go
 import "github.com/gmcorenet/sdk/gmcore-transport"
 
-// Create transport
-t := gmcore_transport.New(gmcore_transport.Config{
-    Mode: gmcore_transport.ModeUDS,
-    Path: "var/socket/myapp.sock",
-})
+// Create transport from YAML config
+cfg, _ := gmcore_transport.LoadConfig("/opt/gmcore/myapp")
+
+t := gmcore_transport.New(cfg.ToConfig())
+t.UseSecurity(cfg.ToSecurityProvider())
 
 // Add lifecycle handlers
 t.Lifecycle().OnStart(func() error { /* start app */ return nil })
@@ -51,38 +109,34 @@ if err := client.Connect(); err != nil {
 resp, err := client.Command("restart", nil)
 ```
 
-## Configuration
+## Configuration Options
 
 ### Mode Options
 
-- `ModeUDS` - Unix Domain Socket only
-- `ModeTCP` - TCP/IP only
-- `ModeBoth` - Both UDS and TCP
+| Mode  | Description                    |
+|-------|--------------------------------|
+| `uds` | Unix Domain Socket only        |
+| `tcp` | TCP/IP only                    |
+| `both`| Both UDS and TCP simultaneously |
 
-### Security Providers
+### TCP Ports
 
-```go
-// No security (development)
-t.UseSecurity(&gmcore_transport.NoOpSecurity{})
-
-// HMAC signature
-t.UseSecurity(gmcore_transport.NewHMACSecurity([]byte("shared-secret")))
-
-// Mutual authentication with certificates
-sec, err := gmcore_transport.NewMutualSecurity("var/keys")
-t.UseSecurity(sec)
+```yaml
+tcp:
+  host: 0.0.0.0
+  ports:
+    - 80
+    - 443
+    - 8080
 ```
 
-## Pairing
+### Security Types
 
-Apps automatically pair with gateway on first connection:
-
-```go
-pm := gmcore_transport.NewPairingManager(appID, appName, "var/keys")
-if err := pm.RequestPairing("gateway-host"); err != nil {
-    log.Fatal(err)
-}
-```
+| Type     | Description                        |
+|----------|------------------------------------|
+| `none`   | No security (development)           |
+| `hmac`   | HMAC-SHA256 signature              |
+| `mutual` | Mutual TLS authentication          |
 
 ## Lifecycle Commands
 
