@@ -4,14 +4,50 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/gmcorenet/sdk/gmcore-config"
 )
 
 type Installer struct {
 	rootPath string
+	registry *gmcore_config.RecipeRegistry
 }
 
 func New(rootPath string) *Installer {
-	return &Installer{rootPath: rootPath}
+	return &Installer{
+		rootPath: rootPath,
+		registry: gmcore_config.NewRecipeRegistry(),
+	}
+}
+
+func (i *Installer) InstallSDKConfigs(vars map[string]string) error {
+	recipes := i.registry.GetEnabledRecipes()
+
+	for _, recipe := range recipes {
+		files, err := i.registry.RenderRecipe(recipe, vars)
+		if err != nil {
+			return fmt.Errorf("failed to render recipe %s: %w", recipe.Name, err)
+		}
+
+		for _, file := range files {
+			fullPath := filepath.Join(i.rootPath, file.Path)
+
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				return fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
+			}
+
+			perms := file.Mode
+			if perms == 0 {
+				perms = 0644
+			}
+
+			if err := os.WriteFile(fullPath, []byte(file.Content), perms); err != nil {
+				return fmt.Errorf("failed to write %s: %w", file.Path, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (i *Installer) Install() error {
@@ -22,11 +58,14 @@ func (i *Installer) Install() error {
 		"var/data",
 		"var/cache",
 		"var/tmp",
+		"var/socket",
+		"var/keys",
 		"internal/controller",
 		"internal/model",
 		"internal/service",
 		"internal/repository",
 		"internal/middleware",
+		"translations",
 	}
 
 	for _, dir := range dirs {
@@ -39,7 +78,6 @@ func (i *Installer) Install() error {
 	files := map[string]string{
 		"config/app.yaml":           appConfig,
 		"config/packages/framework.yaml": frameworkConfig,
-		"config/routes.yaml":        routesConfig,
 		"config/services.yaml":     servicesConfig,
 		"public/index.php":         indexPHP,
 		"app.yaml":                 appYaml,
@@ -65,9 +103,20 @@ func (i *Installer) CreateModule(name string) error {
 	return os.MkdirAll(dir, 0755)
 }
 
-const appConfig = `# GMCore Application Configuration
-app:
-  name: "GMCore Application"
+func (i *Installer) GetRecipeRegistry() *gmcore_config.RecipeRegistry {
+	return i.registry
+}
+
+func (i *Installer) EnableSDK(name string) {
+	i.registry.Enable(name)
+}
+
+func (i *Installer) DisableSDK(name string) {
+	i.registry.Disable(name)
+}
+
+const appConfig = `app:
+  name: "My GMCore Application"
   env: dev
   debug: true
   timezone: UTC
@@ -78,20 +127,14 @@ server:
 `
 
 const frameworkConfig = `framework:
-  secret: "%env(APP_SECRET)%"
+  secret: %env(APP_SECRET)%
   session:
     lifetime: 3600
   router:
     resource: config/routes.yaml
 `
 
-const routesConfig = `# Routes Configuration
-routes: []
-
-`
-
-const servicesConfig = `# Services Configuration
-services:
+const servicesConfig = `services:
   _defaults:
     autowire: true
     public: false
@@ -102,6 +145,6 @@ const indexPHP = `<?php
 echo "GMCore Framework";
 `
 
-const appYaml = `name: GMCore Application
+const appYaml = `name: My GMCore Application
 version: 1.0.0
 `
