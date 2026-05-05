@@ -1,6 +1,7 @@
 package gmcore_transport
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -199,16 +200,25 @@ func (p *PairingManager) Unpair() error {
 }
 
 type GatewayPairingHandler struct {
-	apps      map[string]*PairingInfo
-	mu        sync.RWMutex
-	onPaired  func(appID, socketPath string, secret []byte) error
+	apps       map[string]*PairingInfo
+	mu         sync.RWMutex
+	gatewayID  string
+	onPaired   func(appID, socketPath string, secret []byte) error
 	onUnpaired func(appID string)
 }
 
 func NewGatewayPairingHandler() *GatewayPairingHandler {
+	id := generateGatewayID()
 	return &GatewayPairingHandler{
-		apps: make(map[string]*PairingInfo),
+		apps:      make(map[string]*PairingInfo),
+		gatewayID: id,
 	}
+}
+
+func generateGatewayID() string {
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("gateway-%x", b)
 }
 
 func (h *GatewayPairingHandler) OnPaired(cb func(appID, socketPath string, secret []byte) error) {
@@ -236,10 +246,10 @@ func (h *GatewayPairingHandler) HandlePairing(conn net.Conn) error {
 	if exists {
 		h.mu.Unlock()
 		resp := PairingResponse{
-			Type:     "pairing_response",
-			Accepted: true,
-			GatewayID: "gateway-1",
-			Secret:   existing.Secret,
+			Type:      "pairing_response",
+			Accepted:  true,
+			GatewayID: h.gatewayID,
+			Secret:    existing.Secret,
 		}
 		data, _ := json.Marshal(resp)
 		conn.Write(data)
@@ -254,7 +264,7 @@ func (h *GatewayPairingHandler) HandlePairing(conn net.Conn) error {
 
 	info := &PairingInfo{
 		AppID:      req.AppID,
-		GatewayID:  "gateway-1",
+		GatewayID:  h.gatewayID,
 		SocketPath: req.SocketPath,
 		Secret:     secret,
 		PairedAt:   time.Now().Unix(),
@@ -280,8 +290,8 @@ func (h *GatewayPairingHandler) HandlePairing(conn net.Conn) error {
 	resp := PairingResponse{
 		Type:      "pairing_response",
 		Accepted:  true,
-		GatewayID: "gateway-1",
-		Secret:   secret,
+		GatewayID: h.gatewayID,
+		Secret:    secret,
 	}
 	data, _ := json.Marshal(resp)
 	conn.Write(data)

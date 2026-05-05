@@ -2,6 +2,7 @@ package gmcore_security
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -104,18 +105,33 @@ func (h *BCryptHasher) NeedsRehash(hashedPassword string) bool {
 	return true
 }
 
-type SimplePasswordHasher struct{}
+type SimplePasswordHasher struct {
+	Cost int
+}
+
+func NewSimplePasswordHasher() *SimplePasswordHasher {
+	return &SimplePasswordHasher{Cost: bcrypt.DefaultCost}
+}
 
 func (s *SimplePasswordHasher) Hash(password string) (string, error) {
-	return password, nil
+	if password == "" {
+		return "", errors.New("password cannot be empty")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), s.Cost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
 }
 
 func (s *SimplePasswordHasher) Verify(hashedPassword, plainPassword string) bool {
-	return hashedPassword == plainPassword
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(plainPassword))
+	return err == nil
 }
 
 func (s *SimplePasswordHasher) NeedsRehash(hashedPassword string) bool {
-	return false
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(""))
+	return err != nil
 }
 
 type BasicAuthenticator struct {

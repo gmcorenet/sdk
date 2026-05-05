@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 )
@@ -99,11 +100,7 @@ func joinMethods(methods []string) string {
 	if len(methods) == 0 {
 		return ""
 	}
-	result := methods[0]
-	for i := 1; i < len(methods); i++ {
-		result += "," + methods[i]
-	}
-	return result
+	return strings.Join(methods, " ")
 }
 
 type DefaultHandlerRegistry struct {

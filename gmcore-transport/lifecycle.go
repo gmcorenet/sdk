@@ -171,8 +171,6 @@ func (a *AppTransport) Listen(ctx context.Context, mode Mode) error {
 	if a.sec != nil {
 		a.transport.UseSecurity(a.sec)
 	}
-
-	a.transport.UseSecurity(a.sec)
 	a.transport.server.SetHandler(func(cmd string, payload []byte) ([]byte, error) {
 		return a.lifecycle.Handle(cmd, payload)
 	})
