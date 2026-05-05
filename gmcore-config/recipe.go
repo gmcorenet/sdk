@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Recipe struct {
@@ -304,7 +306,11 @@ func (r *RecipeRegistry) InstallRecipes(appPath string, vars map[string]string, 
 			}
 
 			if exists && !force {
-				continue
+				merged, err := r.mergeConfig(fullPath, file.Content)
+				if err != nil {
+					return fmt.Errorf("failed to merge config %s: %w", file.Path, err)
+				}
+				file.Content = merged
 			}
 
 			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
@@ -323,6 +329,54 @@ func (r *RecipeRegistry) InstallRecipes(appPath string, vars map[string]string, 
 	}
 
 	return nil
+}
+
+func (r *RecipeRegistry) mergeConfig(existingPath, newContent string) (string, error) {
+	existingData, err := os.ReadFile(existingPath)
+	if err != nil {
+		return newContent, nil
+	}
+
+	var existing, news, merged map[string]interface{}
+
+	if err := yaml.Unmarshal(existingData, &existing); err != nil {
+		return newContent, nil
+	}
+
+	if err := yaml.Unmarshal([]byte(newContent), &news); err != nil {
+		return newContent, nil
+	}
+
+	merged = r.mergeMap(existing, news)
+
+	out, err := yaml.Marshal(merged)
+	if err != nil {
+		return newContent, err
+	}
+
+	return string(out), nil
+}
+
+func (r *RecipeRegistry) mergeMap(existing, new map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	for k, v := range existing {
+		result[k] = v
+	}
+
+	for k, v := range new {
+		if ev, ok := existing[k]; ok {
+			if em, ok := ev.(map[string]interface{}); ok {
+				if nm, ok := v.(map[string]interface{}); ok {
+					result[k] = r.mergeMap(em, nm)
+					continue
+				}
+			}
+		}
+		result[k] = v
+	}
+
+	return result
 }
 
 func (r *RecipeRegistry) GenerateManifest() string {
