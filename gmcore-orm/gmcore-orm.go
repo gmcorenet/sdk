@@ -380,9 +380,9 @@ func (qb QueryBuilder) Update(ctx context.Context, values map[string]interface{}
 	return query.UpdateColumns(values).Error
 }
 
-// RawQuery executes a raw query and populates dest with results.
-func (qb QueryBuilder) RawQuery(query string, args ...interface{}) error {
-	return qb.db.Raw(query, args...).Find(qb.tableName).Error
+// RawQuery executes a raw query and returns results in dest.
+func (qb QueryBuilder) RawQuery(dest interface{}, query string, args ...interface{}) error {
+	return qb.db.Raw(query, args...).Scan(dest).Error
 }
 
 // UnitOfWork implements the Unit of Work pattern for transactional operations.
