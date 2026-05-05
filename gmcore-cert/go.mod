@@ -2,13 +2,14 @@ module github.com/gmcorenet/sdk/gmcore-cert
 
 go 1.21
 
+require golang.org/x/crypto v0.17.0
+
 require (
-	github.com/gmcorenet/sdk/gmcore-cert v0.0.0
-	golang.org/x/crypto v0.17.0
-	github.com/gmcorenet/gmcore-error v0.1.0
+	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 )
 
 replace (
-	github.com/gmcorenet/sdk/gmcore-cert => .
 	github.com/gmcorenet/gmcore-error => ../gmcore-error
+	github.com/gmcorenet/sdk/gmcore-cert => .
 )
