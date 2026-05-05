@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	ErrNotConnected    = errors.New("not connected")
-	ErrInvalidMessage  = errors.New("invalid message")
-	ErrSecurityError   = errors.New("security error")
+	ErrNotConnected   = errors.New("not connected")
+	ErrInvalidMessage = errors.New("invalid message")
+	ErrSecurityError  = errors.New("security error")
 	ErrHandshakeFailed = errors.New("handshake failed")
 )
 
@@ -40,7 +40,7 @@ type Config struct {
 type Transport struct {
 	config   Config
 	server   *Server
-	security SecurityProvider
+	sec      SecurityProvider
 	mu       sync.RWMutex
 }
 
@@ -51,12 +51,12 @@ func New(cfg Config) *Transport {
 }
 
 func (t *Transport) UseSecurity(s SecurityProvider) {
-	t.security = s
+	t.sec = s
 }
 
 func (t *Transport) Listen(ctx context.Context) error {
-	if t.security == nil {
-		t.security = &NoOpSecurity{}
+	if t.sec == nil {
+		t.sec = &NoOpSecurity{}
 	}
 
 	switch t.config.Mode {
@@ -77,27 +77,37 @@ func (t *Transport) listenUDS(ctx context.Context) error {
 		return fmt.Errorf("failed to listen on UDS: %w", err)
 	}
 
-	t.server = NewServer(ln, t.security)
+	t.server = NewServer(ln, t.sec)
 	return t.server.Serve(ctx)
 }
 
 func (t *Transport) listenTCP(ctx context.Context) error {
-	var ln net.Listener
-	var err error
+	tcpServer := NewTCPServer(TCPConfig{
+		Host:  t.config.Host,
+		Ports: t.config.Ports,
+	})
+	tcpServer.UseSecurity(t.sec)
+	tcpServer.SetHandler(t.server.handler)
 
-	if len(t.config.Ports) > 0 {
-		addr := fmt.Sprintf("%s:%d", t.config.Host, t.config.Ports[0])
-		ln, err = net.Listen("tcp", addr)
-	} else {
-		ln, err = net.Listen("tcp", t.config.Host+":8080")
+	errCh := make(chan error, 1)
+	stopCh := make(chan struct{})
+
+	go func() {
+		if err := tcpServer.Listen(ctx); err != nil {
+			select {
+			case errCh <- err:
+			case <-stopCh:
+			}
+		}
+	}()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		close(stopCh)
+		return ctx.Err()
 	}
-
-	if err != nil {
-		return fmt.Errorf("failed to listen on TCP: %w", err)
-	}
-
-	t.server = NewServer(ln, t.security)
-	return t.server.Serve(ctx)
 }
 
 func (t *Transport) listenBoth(ctx context.Context) error {
@@ -124,6 +134,7 @@ func (t *Transport) listenBoth(ctx context.Context) error {
 
 	select {
 	case err := <-errCh:
+		close(stopCh)
 		return err
 	case <-ctx.Done():
 		close(stopCh)
@@ -208,7 +219,7 @@ type CommandHandler func(cmd string, payload []byte) ([]byte, error)
 
 type Server struct {
 	listener    net.Listener
-	security    SecurityProvider
+	sec         SecurityProvider
 	handler     CommandHandler
 	httpHandler http.Handler
 	mu          sync.RWMutex
@@ -219,7 +230,7 @@ type Server struct {
 func NewServer(ln net.Listener, security SecurityProvider) *Server {
 	return &Server{
 		listener: ln,
-		security: security,
+		sec:      security,
 		conns:    make(map[net.Conn]bool),
 		done:     make(chan struct{}),
 	}
@@ -261,8 +272,8 @@ func (s *Server) handleConn(conn net.Conn) {
 		conn.Close()
 	}()
 
-	if s.security != nil {
-		if err := s.security.Handshake(conn); err != nil {
+	if s.sec != nil {
+		if err := s.sec.Handshake(conn); err != nil {
 			return
 		}
 	}
@@ -288,13 +299,13 @@ func (s *Server) handleRaw(conn net.Conn) {
 		n, err := conn.Read(buf)
 		if n > 0 {
 			data := buf[:n]
-			if s.security != nil && s.security.Type() != SecurityNone {
+			if s.sec != nil && s.sec.Type() != SecurityNone {
 				if len(data) < 32 {
 					continue
 				}
 				payload := data[:len(data)-32]
 				sig := data[len(data)-32:]
-				if !s.security.Verify(payload, sig) {
+				if !s.sec.Verify(payload, sig) {
 					conn.Write([]byte("SECURITY_ERROR"))
 					continue
 				}
@@ -352,9 +363,9 @@ func (w *HijackedResponseWriter) WriteHeader(int) {}
 type Client struct {
 	addr    string
 	network string
-	security SecurityProvider
+	sec     SecurityProvider
 	conn    net.Conn
-	mu     sync.Mutex
+	mu      sync.Mutex
 }
 
 func NewClient(network, addr string) *Client {
@@ -365,7 +376,7 @@ func NewClient(network, addr string) *Client {
 }
 
 func (c *Client) UseSecurity(s SecurityProvider) {
-	c.security = s
+	c.sec = s
 }
 
 func (c *Client) Connect() error {
@@ -378,8 +389,8 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
-	if c.security != nil {
-		if err := c.security.Handshake(c.conn); err != nil {
+	if c.sec != nil {
+		if err := c.sec.Handshake(c.conn); err != nil {
 			c.conn.Close()
 			return fmt.Errorf("handshake failed: %w", err)
 		}
@@ -407,8 +418,8 @@ func (c *Client) Command(cmd string, payload []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	if c.security != nil && c.security.Type() != SecurityNone {
-		data = append(data, c.security.Sign(data)...)
+	if c.sec != nil && c.sec.Type() != SecurityNone {
+		data = append(data, c.sec.Sign(data)...)
 	}
 
 	_, err = c.conn.Write(data)

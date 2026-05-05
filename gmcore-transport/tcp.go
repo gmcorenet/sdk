@@ -15,12 +15,12 @@ type TCPConfig struct {
 }
 
 type TCPServer struct {
-	config  TCPConfig
-	ln      net.Listener
-	sec     SecurityProvider
-	handler CommandHandler
-	mu      sync.RWMutex
-	closed  bool
+	config   TCPConfig
+	listeners []net.Listener
+	sec      SecurityProvider
+	handler  CommandHandler
+	mu       sync.RWMutex
+	closed   bool
 }
 
 func NewTCPServer(cfg TCPConfig) *TCPServer {
@@ -36,45 +36,68 @@ func (s *TCPServer) SetHandler(h CommandHandler) {
 }
 
 func (s *TCPServer) Listen(ctx context.Context) error {
-	var addr string
-	if len(s.config.Ports) > 0 {
-		addr = fmt.Sprintf("%s:%d", s.config.Host, s.config.Ports[0])
-	} else if s.config.Port > 0 {
-		addr = fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
-	} else {
-		addr = fmt.Sprintf("%s:8080", s.config.Host)
+	ports := s.config.Ports
+	if len(ports) == 0 && s.config.Port > 0 {
+		ports = []int{s.config.Port}
+	}
+	if len(ports) == 0 {
+		ports = []int{8080}
 	}
 
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("failed to listen on TCP: %w", err)
+	s.mu.Lock()
+	s.listeners = make([]net.Listener, 0, len(ports))
+	s.mu.Unlock()
+
+	for _, port := range ports {
+		addr := fmt.Sprintf("%s:%d", s.config.Host, port)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			s.Close()
+			return fmt.Errorf("failed to listen on TCP %s: %w", addr, err)
+		}
+		s.mu.Lock()
+		s.listeners = append(s.listeners, ln)
+		s.mu.Unlock()
 	}
-	s.ln = ln
 
 	return s.serve(ctx)
 }
 
 func (s *TCPServer) serve(ctx context.Context) error {
-	for {
-		conn, err := s.ln.Accept()
-		if err != nil {
-			s.mu.RLock()
-			closed := s.closed
-			s.mu.RUnlock()
+	errCh := make(chan error, len(s.listeners))
+	stopCh := make(chan struct{})
 
-			if closed {
-				return nil
+	for i, ln := range s.listeners {
+		go func(listener net.Listener, idx int) {
+			for {
+				conn, err := listener.Accept()
+				if err != nil {
+					s.mu.RLock()
+					closed := s.closed
+					s.mu.RUnlock()
+
+					if closed {
+						return
+					}
+					select {
+					case errCh <- fmt.Errorf("listener %d: %w", idx, err):
+					case <-stopCh:
+						return
+					}
+					return
+				}
+				go s.handleConn(conn)
 			}
+		}(ln, i)
+	}
 
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-				return err
-			}
-		}
-
-		go s.handleConn(conn)
+	select {
+	case err := <-errCh:
+		close(stopCh)
+		return err
+	case <-ctx.Done():
+		close(stopCh)
+		return ctx.Err()
 	}
 }
 
@@ -130,19 +153,42 @@ func (s *TCPServer) handleRaw(conn net.Conn) {
 func (s *TCPServer) Close() error {
 	s.mu.Lock()
 	s.closed = true
+	listeners := s.listeners
+	s.listeners = nil
 	s.mu.Unlock()
 
-	if s.ln != nil {
-		return s.ln.Close()
+	var errs []error
+	for _, ln := range listeners {
+		if err := ln.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing listeners: %v", errs)
 	}
 	return nil
 }
 
-func (s *TCPServer) Addr() string {
-	if s.ln == nil {
-		return ""
+func (s *TCPServer) Addrs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	addrs := make([]string, 0, len(s.listeners))
+	for _, ln := range s.listeners {
+		if ln != nil {
+			addrs = append(addrs, ln.Addr().String())
+		}
 	}
-	return s.ln.Addr().String()
+	return addrs
+}
+
+func (s *TCPServer) Addr() string {
+	addrs := s.Addrs()
+	if len(addrs) > 0 {
+		return addrs[0]
+	}
+	return ""
 }
 
 type TCPClient struct {
