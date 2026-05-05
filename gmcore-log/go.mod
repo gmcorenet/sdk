@@ -1,7 +1,8 @@
-module github.com/gmcorenet/gmcore-log
+module github.com/gmcorenet/sdk/gmcore-log
 
 go 1.21
 
-require github.com/gmcorenet/sdk/gmcore-error v0.1.0
-
-replace github.com/gmcorenet/sdk/gmcore-error => ../gmcore-error
+require (
+	github.com/gmcorenet/sdk/gmcore-config v1.0.0
+	github.com/gmcorenet/sdk/gmcore-error v1.0.0
+)

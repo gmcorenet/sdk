@@ -1,8 +1,13 @@
 package gmcore_messenger
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
+
+	"github.com/gmcorenet/sdk/gmcore-config"
 )
 
 type MessageHandler func(message interface{}) error
@@ -24,8 +29,9 @@ func NewBus() *bus {
 
 func (b *bus) Dispatch(message interface{}) error {
 	b.mu.RLock()
+	msgType := getType(message)
 	handlers := b.handlers["*"]
-	if hs, ok := b.handlers[getType(message)]; ok {
+	if hs, ok := b.handlers[msgType]; ok {
 		handlers = append(handlers, hs...)
 	}
 	b.mu.RUnlock()
@@ -51,7 +57,14 @@ func (b *bus) Register(handler MessageHandler, messageType string) {
 }
 
 func getType(message interface{}) string {
-	return "default"
+	if message == nil {
+		return "nil"
+	}
+	t := reflect.TypeOf(message)
+	if t.Kind() == reflect.Ptr {
+		return t.Elem().Name()
+	}
+	return t.Name()
 }
 
 type Transport interface {
@@ -125,4 +138,93 @@ func (w *Worker) Start() {
 
 func (w *Worker) Stop() {
 	close(w.stop)
+}
+
+type Config struct {
+	WorkerCount int                    `yaml:"worker_count" json:"worker_count"`
+	RetryPolicy RetryPolicy           `yaml:"retry_policy" json:"retry_policy"`
+	Transport   string                 `yaml:"transport" json:"transport"`
+	Params      map[string]interface{} `yaml:"params" json:"params"`
+}
+
+type RetryPolicy struct {
+	MaxRetries    int `yaml:"max_retries" json:"max_retries"`
+	InitialDelay  int `yaml:"initial_delay" json:"initial_delay"`
+	MaxDelay      int `yaml:"max_delay" json:"max_delay"`
+	Multiplier    float64 `yaml:"multiplier" json:"multiplier"`
+}
+
+type ConfigLoader struct {
+	appPath string
+	env     map[string]string
+}
+
+func NewConfigLoader(appPath string) *ConfigLoader {
+	return &ConfigLoader{
+		appPath: appPath,
+		env:     gmcore_config.LoadAppEnv(appPath),
+	}
+}
+
+func (l *ConfigLoader) Load(path string) (*Config, error) {
+	cfg := &Config{}
+
+	opts := gmcore_config.Options{
+		Env:        l.env,
+		Parameters: map[string]string{},
+		Strict:     false,
+	}
+
+	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+func (l *ConfigLoader) LoadDefault() (*Config, error) {
+	candidates := []string{
+		filepath.Join(l.appPath, "config", "messenger.yaml"),
+		filepath.Join(l.appPath, "config", "messenger.yml"),
+		filepath.Join(l.appPath, "messenger.yaml"),
+		filepath.Join(l.appPath, "messenger.yml"),
+	}
+
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			return l.Load(path)
+		}
+	}
+
+	return nil, nil
+}
+
+func LoadConfig(appPath string) (*Config, error) {
+	loader := NewConfigLoader(appPath)
+	return loader.LoadDefault()
+}
+
+func DefaultRetryPolicy() RetryPolicy {
+	return RetryPolicy{
+		MaxRetries:   3,
+		InitialDelay: 1000,
+		MaxDelay:     60000,
+		Multiplier:   2.0,
+	}
+}
+
+func (p RetryPolicy) NextDelay(attempt int) time.Duration {
+	delay := float64(p.InitialDelay) * pow(p.Multiplier, float64(attempt))
+	if delay > float64(p.MaxDelay) {
+		delay = float64(p.MaxDelay)
+	}
+	return time.Duration(delay) * time.Millisecond
+}
+
+func pow(base, exp float64) float64 {
+	result := 1.0
+	for i := 0; i < int(exp); i++ {
+		result *= base
+	}
+	return result
 }
