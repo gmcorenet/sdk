@@ -11,6 +11,7 @@ import (
 type Installer struct {
 	rootPath string
 	registry *gmcore_config.RecipeRegistry
+	force    bool
 }
 
 func New(rootPath string) *Installer {
@@ -20,34 +21,16 @@ func New(rootPath string) *Installer {
 	}
 }
 
-func (i *Installer) InstallSDKConfigs(vars map[string]string) error {
-	recipes := i.registry.GetEnabledRecipes()
+func (i *Installer) SetForce(force bool) {
+	i.force = force
+}
 
-	for _, recipe := range recipes {
-		files, err := i.registry.RenderRecipe(recipe, vars)
-		if err != nil {
-			return fmt.Errorf("failed to render recipe %s: %w", recipe.Name, err)
-		}
+func (i *Installer) EnableSDK(name string) {
+	i.registry.Enable(name)
+}
 
-		for _, file := range files {
-			fullPath := filepath.Join(i.rootPath, file.Path)
-
-			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-				return fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
-			}
-
-			perms := file.Mode
-			if perms == 0 {
-				perms = 0644
-			}
-
-			if err := os.WriteFile(fullPath, []byte(file.Content), perms); err != nil {
-				return fmt.Errorf("failed to write %s: %w", file.Path, err)
-			}
-		}
-	}
-
-	return nil
+func (i *Installer) DisableSDK(name string) {
+	i.registry.Disable(name)
 }
 
 func (i *Installer) Install() error {
@@ -79,18 +62,23 @@ func (i *Installer) Install() error {
 		"config/app.yaml":           appConfig,
 		"config/packages/framework.yaml": frameworkConfig,
 		"config/services.yaml":     servicesConfig,
-		"public/index.php":         indexPHP,
 		"app.yaml":                 appYaml,
 	}
 
 	for file, content := range files {
 		path := filepath.Join(i.rootPath, file)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return fmt.Errorf("failed to create %s: %w", file, err)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+				return fmt.Errorf("failed to create %s: %w", file, err)
+			}
 		}
 	}
 
 	return nil
+}
+
+func (i *Installer) InstallSDKConfigs(vars map[string]string) error {
+	return i.registry.InstallRecipes(i.rootPath, vars, i.force)
 }
 
 func (i *Installer) CreateBundle(name string) error {
@@ -105,14 +93,6 @@ func (i *Installer) CreateModule(name string) error {
 
 func (i *Installer) GetRecipeRegistry() *gmcore_config.RecipeRegistry {
 	return i.registry
-}
-
-func (i *Installer) EnableSDK(name string) {
-	i.registry.Enable(name)
-}
-
-func (i *Installer) DisableSDK(name string) {
-	i.registry.Disable(name)
 }
 
 const appConfig = `app:
@@ -138,11 +118,6 @@ const servicesConfig = `services:
   _defaults:
     autowire: true
     public: false
-`
-
-const indexPHP = `<?php
-// GMCore Web Entry Point
-echo "GMCore Framework";
 `
 
 const appYaml = `name: My GMCore Application
