@@ -84,16 +84,19 @@ func LoadConfig(appPath string) (*Config, error) {
 	return loader.LoadDefault()
 }
 
-func (c *Config) ApplyTo(router *Router, registry HandlerRegistry) {
+func (c *Config) ApplyTo(router *Router, registry HandlerRegistry) error {
 	for _, route := range c.Routes {
-		handler := registry.Get(route.Handler)
-		router.Add(
-			joinMethods(route.Methods),
-			route.Path,
-			route.Name,
-			handler.Handle,
-		)
+		if dr, ok := registry.(*DefaultHandlerRegistry); ok {
+			handler := dr.CreateHandler(route.Handler)
+			router.Add(
+				joinMethods(route.Methods),
+				route.Path,
+				route.Name,
+				handler,
+			)
+		}
 	}
+	return nil
 }
 
 func joinMethods(methods []string) string {

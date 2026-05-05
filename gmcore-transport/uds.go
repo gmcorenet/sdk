@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"sync"
 	"time"
@@ -238,7 +239,22 @@ func (c *UDSClient) IsConnected() bool {
 }
 
 func setSocketGroup(socketPath, group string) error {
-	return nil
+	if group == "" {
+		return nil
+	}
+	stat, err := os.Stat(socketPath)
+	if err != nil {
+		return fmt.Errorf("failed to stat socket: %w", err)
+	}
+	sys := stat.Sys()
+	if sys == nil {
+		return fmt.Errorf("platform not supported for setting socket group")
+	}
+	gr, err := user.LookupGroup(group)
+	if err != nil {
+		return fmt.Errorf("failed to find group %s: %w", group, err)
+	}
+	return os.Chown(socketPath, -1, gr.Gid)
 }
 
 func EnsureSocketDir(socketDir string) error {

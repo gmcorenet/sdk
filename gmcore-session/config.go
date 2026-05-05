@@ -1,6 +1,7 @@
 package gmcore_session
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -80,10 +81,11 @@ func LoadConfig(appPath string) (*Config, error) {
 	return loader.LoadDefault()
 }
 
-func (c *Config) ApplyTo(manager *Manager) {
-	if c.Name != "" {
-		// Can't change manager name directly, recreate if needed
+func (c *Config) ApplyTo(manager *Manager) error {
+	if c.Name != "" && c.Name != manager.Name() {
+		return errors.New("session manager name cannot be changed after creation, recreate manager")
 	}
+	return nil
 }
 
 func (c *Config) ToCookieConfig() CookieConfig {

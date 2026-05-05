@@ -155,6 +155,10 @@ func NewManager(store Store, name string, lifetime time.Duration) *Manager {
 	return &Manager{store: store, name: name, lifetime: lifetime}
 }
 
+func (m *Manager) Name() string {
+	return m.name
+}
+
 func (m *Manager) Start(w http.ResponseWriter, r *http.Request) (Session, error) {
 	c, err := r.Cookie(m.name)
 	var sid string

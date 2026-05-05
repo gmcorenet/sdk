@@ -2,12 +2,14 @@ package gmcore_mailer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -38,10 +40,16 @@ type SMTPMailer struct {
 	port     int
 	username string
 	password string
+	tls      *tls.Config
 }
 
 func NewSMTPMailer(host string, port int, username, password string) *SMTPMailer {
 	return &SMTPMailer{host: host, port: port, username: username, password: password}
+}
+
+func (m *SMTPMailer) WithTLS(tlsCfg *tls.Config) *SMTPMailer {
+	m.tls = tlsCfg
+	return m
 }
 
 func (m *SMTPMailer) Send(email *Email) error {
@@ -71,13 +79,100 @@ func (m *SMTPMailer) Send(email *Email) error {
 	allRecipients = append(allRecipients, email.Cc...)
 	allRecipients = append(allRecipients, email.Bcc...)
 
-	return smtp.SendMail(
-		fmt.Sprintf("%s:%d", m.host, m.port),
-		auth,
-		email.From,
-		allRecipients,
-		msg.Bytes(),
-	)
+	addr := fmt.Sprintf("%s:%d", m.host, m.port)
+
+	if m.port == 465 && m.tls != nil {
+		return m.sendWithImplicitTLS(addr, auth, email.From, allRecipients, msg.Bytes())
+	}
+
+	if m.port == 587 || m.tls != nil {
+		return m.sendWithSTARTTLS(addr, auth, email.From, allRecipients, msg.Bytes())
+	}
+
+	return smtp.SendMail(addr, auth, email.From, allRecipients, msg.Bytes())
+}
+
+func (m *SMTPMailer) sendWithImplicitTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	tlsCfg := m.tls
+	if tlsCfg == nil {
+		tlsCfg = &tls.Config{ServerName: m.host}
+	}
+
+	conn, err := tls.Dial("tcp", addr, tlsCfg)
+	if err != nil {
+		return fmt.Errorf("failed to connect with TLS: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, m.host)
+	if err != nil {
+		return fmt.Errorf("failed to create SMTP client: %w", err)
+	}
+	defer client.Close()
+
+	return m.sendWithClient(client, auth, from, to, msg)
+}
+
+func (m *SMTPMailer) sendWithSTARTTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, m.host)
+	if err != nil {
+		return fmt.Errorf("failed to create SMTP client: %w", err)
+	}
+	defer client.Close()
+
+	tlsCfg := m.tls
+	if tlsCfg == nil {
+		tlsCfg = &tls.Config{ServerName: m.host}
+	}
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err := client.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("failed to start TLS: %w", err)
+		}
+	} else if m.tls != nil {
+		return errors.New("server does not support STARTTLS")
+	}
+
+	return m.sendWithClient(client, auth, from, to, msg)
+}
+
+func (m *SMTPMailer) sendWithClient(client *smtp.Client, auth smtp.Auth, from string, to []string, msg []byte) error {
+	if auth != nil {
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	}
+
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("failed to set sender: %w", err)
+	}
+
+	for _, recipient := range to {
+		if err := client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("failed to set recipient: %w", err)
+		}
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("failed to open data writer: %w", err)
+	}
+
+	if _, err := w.Write(msg); err != nil {
+		return fmt.Errorf("failed to send message: %w", err)
+	}
+
+	if err := w.Close(); err != nil {
+		return fmt.Errorf("failed to close data writer: %w", err)
+	}
+
+	return client.Quit()
 }
 
 func (m *SMTPMailer) buildSimpleMessage(msg *bytes.Buffer, email *Email) error {

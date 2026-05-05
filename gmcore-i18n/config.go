@@ -1,6 +1,7 @@
 package gmcore_i18n
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -67,9 +68,7 @@ func LoadConfig(appPath string) (*Config, error) {
 
 func (c *Config) Build() (*Translator, error) {
 	if len(c.Directories) == 0 {
-		c.Directories = []string{
-			filepath.Join(c.DefaultLocale, "messages.yaml"),
-		}
+		return nil, errors.New("i18n: at least one translation directory is required")
 	}
 
 	defaultLocale := c.DefaultLocale
