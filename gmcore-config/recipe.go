@@ -38,12 +38,54 @@ var AllRecipes = []Recipe{
     group: gmcore
     auto_remove: false
   tcp:
-    host: 0.0.0.0
+    host: 127.0.0.1
     ports: [8080]
 
 security:
   type: hmac
   key: %env(TRANSPORT_SECRET)%
+
+exposure:
+  mode: internal
+  direct:
+    enabled: false
+    host: 127.0.0.1
+    ports: [8080]
+  gateway:
+    enabled: true
+    app: gateway
+`,
+				Mode: 0644,
+			},
+		},
+	},
+	{
+		Name:    "gmcore-lifecycle",
+		Version: "1.0.0",
+		ConfigFiles: []ConfigFile{
+			{
+				Path: "config/lifecycle.yaml",
+				Content: `lifecycle:
+  pid_file: var/run/app.pid
+  shutdown_timeout: 10s
+  reload_signal: HUP
+`,
+				Mode: 0644,
+			},
+		},
+	},
+	{
+		Name:    "gmcore-ratelimit",
+		Version: "1.0.0",
+		ConfigFiles: []ConfigFile{
+			{
+				Path: "config/ratelimit.yaml",
+				Content: `ratelimit:
+  enabled: true
+  strategy: sliding_window
+  defaults:
+    limit: 120
+    window: 1m
 `,
 				Mode: 0644,
 			},

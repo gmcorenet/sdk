@@ -2,8 +2,6 @@ package gmcore_i18n
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 )
@@ -14,56 +12,14 @@ type Config struct {
 	FallbackLocale string `yaml:"fallback_locale" json:"fallback_locale"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "i18n.yaml"),
-		filepath.Join(l.appPath, "config", "i18n.yml"),
-		filepath.Join(l.appPath, "config", "translation.yaml"),
-		filepath.Join(l.appPath, "config", "translation.yml"),
-		filepath.Join(l.appPath, "i18n.yaml"),
-		filepath.Join(l.appPath, "i18n.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"i18n.yaml", "i18n.yml", "translation.yaml", "translation.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *Config) Build() (*Translator, error) {

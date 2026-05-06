@@ -434,10 +434,7 @@ func (r Runner) runCommand(step Step) error {
 	}
 	cmd := exec.Command(commandName, step.Args...)
 	cmd.Dir = r.TargetRoot
-	cmd.Env = os.Environ()
-	for key, value := range step.Env {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
+	cmd.Env = sanitizeEnv(step.Env)
 	cmd.Stdout = r.Stdout
 	cmd.Stderr = r.Stderr
 	cmd.Stdin = r.Stdin
@@ -733,6 +730,61 @@ func archiveTargetPath(destination, name string, stripComponents int) (string, b
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func sanitizeEnv(userEnv map[string]string) []string {
+	dangerous := []string{
+		"LD_PRELOAD",
+		"LD_LIBRARY_PATH",
+		"LD_AUDIT",
+		"LD_DEBUG",
+		"LD_PROFILE",
+		"DYLD_INSERT_LIBRARIES",
+		"DYLD_LIBRARY_PATH",
+		"DYLD_FRAMEWORK_PATH",
+		"DYLD_VERSIONED_FRAMEWORK_PATH",
+		"DYLD_VERSIONED_LIBRARY_PATH",
+		"BASH_ENV",
+		"ENV",
+		"CDPATH",
+		"IFS",
+		"MAIL",
+		"MAILPATH",
+		"OPTIND",
+		"PPID",
+		"TZ",
+		"HISTSIZE",
+		"HISTFILESIZE",
+		"HISTCONTROL",
+		"HISTFILE",
+		"HISTSIZE",
+		"HISTFILESIZE",
+		"HOSTALIASES",
+		"ENV",
+		"TERMCAP",
+		"COLUMNS",
+		"LINES",
+	}
+
+	safeEnv := []string{}
+	for _, env := range os.Environ() {
+		isDangerous := false
+		for _, danger := range dangerous {
+			if strings.HasPrefix(env, danger+"=") {
+				isDangerous = true
+				break
+			}
+		}
+		if !isDangerous {
+			safeEnv = append(safeEnv, env)
+		}
+	}
+
+	for key, value := range userEnv {
+		safeEnv = append(safeEnv, key+"="+value)
+	}
+
+	return safeEnv
 }
 
 func firstNonEmpty(values ...string) string {

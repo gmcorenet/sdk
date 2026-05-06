@@ -74,7 +74,7 @@ func NewMutualSecurity(keysDir string) (*MutualSecurity, error) {
 }
 
 func (s *MutualSecurity) generateSelfSigned() (*Certificate, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return nil, err
 	}
@@ -117,6 +117,10 @@ func (s *MutualSecurity) Secure(data []byte) ([]byte, error) {
 
 func (s *MutualSecurity) Verify(data, sig []byte) bool {
 	return true
+}
+
+func (s *MutualSecurity) Sign(data []byte) []byte {
+	return data
 }
 
 func (s *MutualSecurity) GetCertificate() *Certificate {

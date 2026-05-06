@@ -203,9 +203,9 @@ func generateSid() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-type contextKey string
+type sessionContextKey struct{}
 
-const SessionKey contextKey = "gmcore_session"
+var SessionKey = sessionContextKey{}
 
 func SaveToContext(ctx context.Context, s Session) context.Context {
 	return context.WithValue(ctx, SessionKey, s)

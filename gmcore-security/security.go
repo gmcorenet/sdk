@@ -1,78 +1,118 @@
 package gmcore_security
 
 import (
-	"context"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	ACCESS_GRANTED = 1
+	ACCESS_DENIED  = -1
+	ACCESS_ABSTAIN = 0
+)
+
+type PasswordHasher interface {
+	Hash(password string) (string, error)
+	Verify(hashedPassword, plainPassword string) bool
+	NeedsRehash(hashedPassword string) bool
+}
+
+type User interface {
+	GetRoles() []string
+	GetPassword() string
+	EraseCredentials()
+}
+
+type simpleUser struct {
+	username string
+	password string
+	roles    []string
+}
+
+func NewSimpleUser(username, password string, roles []string) User {
+	return &simpleUser{
+		username: username,
+		password: password,
+		roles:    roles,
+	}
+}
+
+func (u *simpleUser) GetRoles() []string  { return u.roles }
+func (u *simpleUser) GetPassword() string { return u.password }
+func (u *simpleUser) EraseCredentials()   { u.password = "" }
+
+type Voter interface {
+	Vote(user User, attribute string, subject interface{}) int
+}
+
+type SecurityChecker struct {
+	voters []Voter
+}
+
+func NewSecurityChecker() *SecurityChecker {
+	return &SecurityChecker{voters: make([]Voter, 0)}
+}
+
+func (c *SecurityChecker) AddVoter(v Voter) {
+	c.voters = append(c.voters, v)
+}
+
+func (c *SecurityChecker) IsGranted(user User, attribute string, subject interface{}) bool {
+	for _, voter := range c.voters {
+		result := voter.Vote(user, attribute, subject)
+		if result == ACCESS_DENIED {
+			return false
+		}
+		if result == ACCESS_GRANTED {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *SecurityChecker) IsGrantedAny(user User, roles []string, subject interface{}) bool {
+	for _, role := range roles {
+		if c.IsGranted(user, role, subject) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *SecurityChecker) IsGrantedAll(user User, roles []string, subject interface{}) bool {
+	for _, role := range roles {
+		if !c.IsGranted(user, role, subject) {
+			return false
+		}
+	}
+	return len(roles) > 0
+}
+
 type Config struct {
-	RolePrefix    string   `yaml:"role_prefix" json:"role_prefix"`
-	DefaultRole   string   `yaml:"default_role" json:"default_role"`
-	PasswordCost int      `yaml:"password_cost" json:"password_cost"`
-	Firewall      FirewallConfig `yaml:"firewall" json:"firewall"`
+	RolePrefix   string         `yaml:"role_prefix" json:"role_prefix"`
+	DefaultRole  string         `yaml:"default_role" json:"default_role"`
+	PasswordCost int            `yaml:"password_cost" json:"password_cost"`
+	Firewall     FirewallConfig `yaml:"firewall" json:"firewall"`
 }
 
 type FirewallConfig struct {
-	Enabled   bool     `yaml:"enabled" json:"enabled"`
-	Patterns  []string `yaml:"patterns" json:"patterns"`
-	Excludes  []string `yaml:"excludes" json:"excludes"`
-}
-
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "security.yaml"),
-		filepath.Join(l.appPath, "config", "security.yml"),
-		filepath.Join(l.appPath, "security.yaml"),
-		filepath.Join(l.appPath, "security.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
-		}
-	}
-
-	return nil, nil
+	Enabled  bool     `yaml:"enabled" json:"enabled"`
+	Patterns []string `yaml:"patterns" json:"patterns"`
+	Excludes []string `yaml:"excludes" json:"excludes"`
 }
 
 func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"security.yaml", "security.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
+		}
+	}
+	return nil, nil
 }
 
 type BCryptHasher struct {
@@ -135,9 +175,9 @@ func (s *SimplePasswordHasher) NeedsRehash(hashedPassword string) bool {
 }
 
 type BasicAuthenticator struct {
-	Realm      string
-	Hasher     PasswordHasher
-	Users      map[string]string
+	Realm  string
+	Hasher PasswordHasher
+	Users  map[string]string
 }
 
 func NewBasicAuthenticator(realm string, hasher PasswordHasher) *BasicAuthenticator {
@@ -222,9 +262,9 @@ func (v *RoleVoter) Vote(user User, attribute string, subject interface{}) int {
 
 var (
 	ErrCredentialsMissing = &SecurityError{Message: "credentials_missing"}
-	ErrUserNotFound      = &SecurityError{Message: "user_not_found"}
+	ErrUserNotFound       = &SecurityError{Message: "user_not_found"}
 	ErrInvalidPassword    = &SecurityError{Message: "invalid_password"}
-	ErrAccessDenied      = &SecurityError{Message: "access_denied"}
+	ErrAccessDenied       = &SecurityError{Message: "access_denied"}
 )
 
 type SecurityError struct {

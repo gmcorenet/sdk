@@ -1,8 +1,6 @@
 package gmcore_cache
 
 import (
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -16,54 +14,14 @@ type Config struct {
 	Params  map[string]interface{} `yaml:"params" json:"params"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "cache.yaml"),
-		filepath.Join(l.appPath, "config", "cache.yml"),
-		filepath.Join(l.appPath, "cache.yaml"),
-		filepath.Join(l.appPath, "cache.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"cache.yaml", "cache.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 type CacheManager interface {
@@ -195,13 +153,13 @@ func newItem(key string, value interface{}) *item {
 	return &item{key: key, value: value}
 }
 
-func (i *item) GetKey() string              { return i.key }
-func (i *item) Get() interface{}            { return i.value }
-func (i *item) IsHit() bool                 { return i.hit }
-func (i *item) Set(v interface{}) Item       { i.value = v; return i }
-func (i *item) ExpiresAt(t time.Time) Item  { i.expiration = t; return i }
+func (i *item) GetKey() string                    { return i.key }
+func (i *item) Get() interface{}                  { return i.value }
+func (i *item) IsHit() bool                       { return i.hit }
+func (i *item) Set(v interface{}) Item            { i.value = v; return i }
+func (i *item) ExpiresAt(t time.Time) Item        { i.expiration = t; return i }
 func (i *item) ExpiresAfter(d time.Duration) Item { i.expiration = time.Now().Add(d); return i }
-func (i *item) IsExpired() bool             { return !i.expiration.IsZero() && time.Now().After(i.expiration) }
+func (i *item) IsExpired() bool                   { return !i.expiration.IsZero() && time.Now().After(i.expiration) }
 
 type Item interface {
 	GetKey() string

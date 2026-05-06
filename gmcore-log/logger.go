@@ -122,6 +122,9 @@ func (l *Logger) log(level Level, msg string, args ...interface{}) {
 	l.mu.Unlock()
 
 	for _, h := range handlers {
+		if h == nil {
+			continue
+		}
 		h.Handle(entry)
 	}
 }
@@ -132,7 +135,7 @@ func (l *Logger) Warn(msg string, args ...interface{}) { l.log(LevelWarn, msg, a
 func (l *Logger) Error(msg string, args ...interface{}) { l.log(LevelError, msg, args...) }
 func (l *Logger) Fatal(msg string, args ...interface{}) {
 	l.log(LevelFatal, msg, args...)
-	os.Exit(1)
+	panic(fmt.Sprintf(msg, args...))
 }
 
 type Entry struct {

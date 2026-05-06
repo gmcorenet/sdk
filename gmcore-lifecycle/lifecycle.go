@@ -223,7 +223,7 @@ func Install(opts InstallOptions) (string, string, error) {
 	if opts.TargetDir == "" {
 		return "", "", errors.New("target directory required")
 	}
-	return "", "", nil
+	return "", "", errors.New("Install is not yet implemented: use release workflow for application deployment")
 }
 
 func parseProcEnviron(data []byte) map[string]string {

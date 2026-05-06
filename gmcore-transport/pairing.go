@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -131,7 +132,7 @@ func (p *PairingManager) RequestPairing(gatewayHost string) error {
 		return ErrAlreadyPaired
 	}
 
-	addr := fmt.Sprintf("%s:%d", gatewayHost, PairingPort)
+	addr := net.JoinHostPort(gatewayHost, strconv.Itoa(PairingPort))
 	conn, err := net.DialTimeout("tcp", addr, PairingTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to gateway: %w", err)

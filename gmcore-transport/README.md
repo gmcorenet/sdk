@@ -19,7 +19,7 @@ Create `config/transport.yaml` in your app:
 
 ```yaml
 server:
-  mode: both  # uds, tcp, or both
+  mode: uds  # uds, tcp, or both
 
   uds:
     path: var/socket/app.sock
@@ -28,10 +28,9 @@ server:
     auto_remove: false
 
   tcp:
-    host: 0.0.0.0
+    host: 127.0.0.1
     ports:
-      - 80
-      - 443
+      - 8080
 
 security:
   type: hmac  # none, hmac, or mutual
@@ -75,23 +74,23 @@ t.Listen(ctx)
 ```go
 import "github.com/gmcorenet/sdk/gmcore-transport"
 
-// Create transport from YAML config
+// Create app transport
 cfg, _ := gmcore_transport.LoadConfig("/opt/gmcore/myapp")
 
-t := gmcore_transport.New(cfg.ToConfig())
-t.UseSecurity(cfg.ToSecurityProvider())
+app := gmcore_transport.NewAppTransport("myapp", "/opt/gmcore/myapp")
+app.UseSecurity(cfg.ToSecurityProvider())
 
 // Add lifecycle handlers
-t.Lifecycle().OnStart(func() error { /* start app */ return nil })
-t.Lifecycle().OnStop(func() error { /* stop app */ return nil })
-t.Lifecycle().OnRestart(func() error { /* restart app */ return nil })
-t.Lifecycle().OnStatus(func() (map[string]any, error) {
+app.Lifecycle().OnStart(func() error { /* start app */ return nil })
+app.Lifecycle().OnStop(func() error { /* stop app */ return nil })
+app.Lifecycle().OnRestart(func() error { /* restart app */ return nil })
+app.Lifecycle().OnStatus(func() (map[string]any, error) {
     return map[string]any{"status": "running"}, nil
 })
 
 // Listen
 ctx := context.Background()
-t.Listen(ctx)
+app.Listen(ctx, cfg.ToConfig().Mode)
 ```
 
 ### Client (Gateway)
@@ -125,10 +124,10 @@ resp, err := client.Command("restart", nil)
 tcp:
   host: 0.0.0.0
   ports:
-    - 80
-    - 443
     - 8080
 ```
+
+For internet edge traffic (`80/443`), expose only the dedicated `gateway` app and route upstream apps through UDS whenever possible.
 
 ### Security Types
 

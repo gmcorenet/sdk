@@ -1,62 +1,19 @@
 package gmcore_transport
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 )
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*FullConfig, error) {
-	cfg := &FullConfig{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*FullConfig, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "transport.yaml"),
-		filepath.Join(l.appPath, "config", "transport.yml"),
-		filepath.Join(l.appPath, "config", "server.yaml"),
-		filepath.Join(l.appPath, "config", "server.yml"),
-		filepath.Join(l.appPath, "transport.yaml"),
-		filepath.Join(l.appPath, "transport.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*FullConfig, error) {
+	l := gmcore_config.NewLoader[FullConfig](appPath)
+	for _, name := range []string{"transport.yaml", "transport.yml", "server.yaml", "server.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*FullConfig, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *FullConfig) ToConfig() Config {

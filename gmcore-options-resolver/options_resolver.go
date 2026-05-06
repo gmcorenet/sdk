@@ -301,6 +301,9 @@ func ParseEnv(prefix string) map[string]string {
 			continue
 		}
 
+		if prefix != "" {
+			key = strings.TrimPrefix(key, prefix)
+		}
 		env[key] = value
 	}
 	return env

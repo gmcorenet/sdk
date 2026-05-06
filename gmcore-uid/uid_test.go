@@ -65,7 +65,10 @@ func TestParseUUIDInvalid(t *testing.T) {
 
 func TestMustParseUUID(t *testing.T) {
 	valid := "550e8400-e29b-41d4-a716-446655440000"
-	uuid := MustParseUUID(valid)
+	uuid, err := MustParseUUID(valid)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	got := uuid.String()
 	if got != valid {
@@ -73,14 +76,11 @@ func TestMustParseUUID(t *testing.T) {
 	}
 }
 
-func TestMustParseUUIDPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic for invalid UUID")
-		}
-	}()
-
-	MustParseUUID("not-a-uuid")
+func TestMustParseUUID_Error(t *testing.T) {
+	_, err := MustParseUUID("not-a-uuid")
+	if err == nil {
+		t.Error("expected error for invalid UUID")
+	}
 }
 
 func TestIsValidPrimaryKey(t *testing.T) {

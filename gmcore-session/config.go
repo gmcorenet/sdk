@@ -3,8 +3,6 @@ package gmcore_session
 import (
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
@@ -31,54 +29,14 @@ type CookieConfig struct {
 	MaxAge   int    `yaml:"max_age" json:"max_age"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "session.yaml"),
-		filepath.Join(l.appPath, "config", "session.yml"),
-		filepath.Join(l.appPath, "session.yaml"),
-		filepath.Join(l.appPath, "session.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"session.yaml", "session.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *Config) ApplyTo(manager *Manager) error {

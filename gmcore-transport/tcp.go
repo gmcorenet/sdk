@@ -4,26 +4,27 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 	"time"
 )
 
-type TCPConfig struct {
+type TCPServerConfig struct {
 	Host  string
 	Port  int
 	Ports []int
 }
 
 type TCPServer struct {
-	config   TCPConfig
+	config    TCPServerConfig
 	listeners []net.Listener
-	sec      SecurityProvider
-	handler  CommandHandler
-	mu       sync.RWMutex
-	closed   bool
+	sec       SecurityProvider
+	handler   CommandHandler
+	mu        sync.RWMutex
+	closed    bool
 }
 
-func NewTCPServer(cfg TCPConfig) *TCPServer {
+func NewTCPServer(cfg TCPServerConfig) *TCPServer {
 	return &TCPServer{config: cfg}
 }
 
@@ -137,7 +138,8 @@ func (s *TCPServer) handleRaw(conn net.Conn) {
 				data = payload
 			}
 
-			resp, err := s.handler("tcp", data)
+			cmd, payload := decodeCommandPayload("tcp", data)
+			resp, err := s.handler(cmd, payload)
 			if err != nil {
 				conn.Write([]byte(fmt.Sprintf("ERROR: %v", err)))
 				continue
@@ -192,11 +194,11 @@ func (s *TCPServer) Addr() string {
 }
 
 type TCPClient struct {
-	host   string
-	port   int
-	sec    SecurityProvider
-	conn   net.Conn
-	mu     sync.Mutex
+	host string
+	port int
+	sec  SecurityProvider
+	conn net.Conn
+	mu   sync.Mutex
 }
 
 func NewTCPClient(host string, port int) *TCPClient {
@@ -211,7 +213,7 @@ func (c *TCPClient) Connect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	addr := fmt.Sprintf("%s:%d", c.host, c.port)
+	addr := net.JoinHostPort(c.host, strconv.Itoa(c.port))
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to TCP: %w", err)

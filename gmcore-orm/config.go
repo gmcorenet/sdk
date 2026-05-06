@@ -1,8 +1,7 @@
 package gmcore_orm
 
 import (
-	"os"
-	"path/filepath"
+	"time"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 	"gorm.io/driver/mysql"
@@ -33,56 +32,14 @@ type LoggingConfig struct {
 	SlowThreshold int `yaml:"slow_threshold" json:"slow_threshold"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "database.yaml"),
-		filepath.Join(l.appPath, "config", "database.yml"),
-		filepath.Join(l.appPath, "config", "orm.yaml"),
-		filepath.Join(l.appPath, "config", "orm.yml"),
-		filepath.Join(l.appPath, "database.yaml"),
-		filepath.Join(l.appPath, "database.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"database.yaml", "database.yml", "orm.yaml", "orm.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *Config) Open() (*gorm.DB, error) {
@@ -108,7 +65,7 @@ func (c *Config) Open() (*gorm.DB, error) {
 	}
 
 	if c.Logging.SlowThreshold > 0 {
-		gormConfig.Logger = logger.Default.LogMode(logger.Slow)
+		gormConfig.Logger = logger.Default.LogMode(logger.Warn)
 	}
 
 	db, err := gorm.Open(dialector, gormConfig)
@@ -152,8 +109,8 @@ func parseLogLevel(level string) logger.LogLevel {
 	}
 }
 
-func parseDuration(seconds int) int {
-	return seconds * 1000
+func parseDuration(seconds int) time.Duration {
+	return time.Duration(seconds) * time.Second
 }
 
 var ErrUnknownDriver = &ORMError{Message: "unknown database driver"}

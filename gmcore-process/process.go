@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -103,6 +104,9 @@ func (p *Process) Wait() (int, error) {
 	defer p.lock.Unlock()
 
 	if p.done {
+		if p.cmd.ProcessState == nil {
+			return -1, fmt.Errorf("process state unavailable")
+		}
 		return p.cmd.ProcessState.ExitCode(), nil
 	}
 
@@ -135,10 +139,13 @@ func (p *Process) WaitWithTimeout(timeout time.Duration) (int, bool, error) {
 		close(done)
 	}()
 
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case <-done:
 		return exitCode, true, err
-	case <-time.After(timeout):
+	case <-timer.C:
 		return -1, false, nil
 	}
 }
@@ -171,7 +178,14 @@ func (p *Process) Kill() error {
 }
 
 func (p *Process) Terminate() error {
-	return p.Signal(syscall.SIGTERM)
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	if p.cmd.Process == nil {
+		return fmt.Errorf("process not started")
+	}
+
+	return p.cmd.Process.Kill()
 }
 
 func (p *Process) IsDone() bool {
@@ -189,6 +203,10 @@ func (p *Process) Running() bool {
 	}
 
 	err := p.cmd.Process.Signal(syscall.Signal(0))
+	if err != nil && runtime.GOOS == "windows" {
+		proc, findErr := os.FindProcess(p.cmd.Process.Pid)
+		return findErr == nil && proc != nil
+	}
 	return err == nil
 }
 

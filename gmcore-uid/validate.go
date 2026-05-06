@@ -64,12 +64,12 @@ func ParseUUID(value string) (UUID, error) {
 	return u, nil
 }
 
-func MustParseUUID(value string) UUID {
+func MustParseUUID(value string) (UUID, error) {
 	u, err := ParseUUID(value)
 	if err != nil {
-		panic(fmt.Sprintf("invalid UUID: %s", value))
+		return UUID{}, fmt.Errorf("invalid UUID: %s", value)
 	}
-	return u
+	return u, nil
 }
 
 type PrimaryKeyType string

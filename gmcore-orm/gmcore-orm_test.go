@@ -1,7 +1,11 @@
 package gmcore_orm
 
 import (
+	"context"
 	"testing"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type TestEntity struct {
@@ -64,6 +68,44 @@ func TestGORMRepositoryCreation(t *testing.T) {
 	}
 	if repo.tableName != "test_entities" {
 		t.Errorf("expected table name 'test_entities', got %s", repo.tableName)
+	}
+}
+
+func TestGORMRepositoryFindAll(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+
+	if err := db.AutoMigrate(&TestEntity{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	if err := db.Create(&TestEntity{Name: "Alice"}).Error; err != nil {
+		t.Fatalf("failed to insert first entity: %v", err)
+	}
+	if err := db.Create(&TestEntity{Name: "Bob"}).Error; err != nil {
+		t.Fatalf("failed to insert second entity: %v", err)
+	}
+
+	repo := newRepository(db, &TestEntity{})
+	entities, err := repo.FindAll(context.Background())
+	if err != nil {
+		t.Fatalf("FindAll failed: %v", err)
+	}
+	if len(entities) != 2 {
+		t.Fatalf("expected 2 entities, got %d", len(entities))
+	}
+	if _, ok := entities[0].(*TestEntity); !ok {
+		t.Fatalf("expected *TestEntity result, got %T", entities[0])
+	}
+}
+
+func TestGORMRepositoryFindAll_NilDB(t *testing.T) {
+	repo := &GORMRepository{}
+	_, err := repo.FindAll(context.Background())
+	if err == nil {
+		t.Fatal("expected error for uninitialized repository")
 	}
 }
 

@@ -52,9 +52,38 @@ func (m *SMTPMailer) WithTLS(tlsCfg *tls.Config) *SMTPMailer {
 	return m
 }
 
+func sanitizeHeaderValue(value string) (string, error) {
+	if strings.ContainsAny(value, "\r\n") {
+		return "", errors.New("header value contains invalid characters (CR/LF)")
+	}
+	return value, nil
+}
+
 func (m *SMTPMailer) Send(email *Email) error {
 	if len(email.To) == 0 {
 		return errors.New("email must have at least one recipient")
+	}
+
+	if _, err := sanitizeHeaderValue(email.From); err != nil {
+		return fmt.Errorf("invalid From header: %w", err)
+	}
+	for _, to := range email.To {
+		if _, err := sanitizeHeaderValue(to); err != nil {
+			return fmt.Errorf("invalid To header: %w", err)
+		}
+	}
+	for _, cc := range email.Cc {
+		if _, err := sanitizeHeaderValue(cc); err != nil {
+			return fmt.Errorf("invalid Cc header: %w", err)
+		}
+	}
+	for _, bcc := range email.Bcc {
+		if _, err := sanitizeHeaderValue(bcc); err != nil {
+			return fmt.Errorf("invalid Bcc header: %w", err)
+		}
+	}
+	if _, err := sanitizeHeaderValue(email.Subject); err != nil {
+		return fmt.Errorf("invalid Subject header: %w", err)
 	}
 
 	var msg bytes.Buffer

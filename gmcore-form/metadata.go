@@ -61,7 +61,7 @@ func DefinitionFromStruct(value interface{}, options DefinitionOptions) (Definit
 }
 
 func ValidationSchemaFromStruct(value interface{}) (gmcore_validation.Schema, error) {
-	return nil, fmt.Errorf("ValidationSchemaFromStruct not implemented: use DefinitionFromStruct which extracts validation tags into Field.Validation")
+	return gmcore_validation.SchemaFromStruct(value)
 }
 
 func normalizeValidationTag(raw string) []string {

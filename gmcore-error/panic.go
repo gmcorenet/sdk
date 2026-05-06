@@ -154,16 +154,26 @@ func (e *GmcoreError) Exit() {
 	os.Exit(int(e.ExitCode()))
 }
 
-func HandleSignals(handlers ...func()) {
+func HandleSignals(handlers ...func()) (stop func()) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	done := make(chan struct{})
 	go func() {
-		sig := <-sigChan
-		for _, h := range handlers {
-			h()
+		select {
+		case sig := <-sigChan:
+			for _, h := range handlers {
+				h()
+			}
+			fmt.Fprintf(os.Stderr, "Received signal %s\n", sig)
+			os.Exit(128 + int(sig.(syscall.Signal)))
+		case <-done:
+			return
 		}
-		fmt.Fprintf(os.Stderr, "Received signal %s\n", sig)
-		os.Exit(128 + int(sig.(syscall.Signal)))
 	}()
+
+	return func() {
+		signal.Stop(sigChan)
+		close(done)
+	}
 }

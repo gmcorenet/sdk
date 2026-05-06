@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-type routeContextKey string
+type routerContextKey struct{}
 
-const paramsKey routeContextKey = "gmcore_router_params"
+var paramsKey = routerContextKey{}
 
 type Route struct {
 	Method  string

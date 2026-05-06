@@ -151,7 +151,11 @@ func (o *DB) AutoMigrate(entities ...Entity) error {
 
 // Repository returns a Repository for the given entity type.
 func (o *DB) Repository(entity Entity) Repository {
-	return newRepository(o.db, entity)
+	repo := newRepository(o.db, entity)
+	if repo == nil {
+		return nil
+	}
+	return repo
 }
 
 // Query returns a QueryBuilder for the given entity type.
@@ -181,7 +185,7 @@ type GORMRepository struct {
 
 func newRepository(db *gorm.DB, entity Entity) *GORMRepository {
 	if entity == nil {
-		panic(ErrInvalidEntity)
+		return nil
 	}
 	return &GORMRepository{
 		db:         db,
@@ -205,11 +209,30 @@ func (r *GORMRepository) Find(ctx context.Context, id interface{}) (Entity, erro
 
 // FindAll implements Repository.
 func (r *GORMRepository) FindAll(ctx context.Context) ([]Entity, error) {
-	var entities []Entity
-	result := r.db.WithContext(ctx).Find(&entities)
+	if r == nil || r.db == nil {
+		return nil, errors.New("repository is not initialized")
+	}
+
+	ptrType := reflect.PointerTo(r.entityType)
+	sliceType := reflect.SliceOf(ptrType)
+	slicePtr := reflect.New(sliceType)
+
+	result := r.db.WithContext(ctx).Find(slicePtr.Interface())
 	if result.Error != nil {
 		return nil, result.Error
 	}
+
+	sliceValue := slicePtr.Elem()
+	entities := make([]Entity, 0, sliceValue.Len())
+	for i := 0; i < sliceValue.Len(); i++ {
+		value := sliceValue.Index(i).Interface()
+		entity, ok := value.(Entity)
+		if !ok {
+			return nil, fmt.Errorf("loaded value does not implement Entity: %T", value)
+		}
+		entities = append(entities, entity)
+	}
+
 	return entities, nil
 }
 
@@ -387,10 +410,10 @@ func (qb QueryBuilder) RawQuery(dest interface{}, query string, args ...interfac
 
 // UnitOfWork implements the Unit of Work pattern for transactional operations.
 type UnitOfWork struct {
-	db     *gorm.DB
-	clean  map[string]Entity
-	dirty  []Entity
-	added  []Entity
+	db      *gorm.DB
+	clean   map[string]Entity
+	dirty   []Entity
+	added   []Entity
 	removed []Entity
 }
 
@@ -515,8 +538,8 @@ func (m *IdentityMap) Size() int {
 
 // RepositoryRegistry manages repositories for different entity types.
 type RepositoryRegistry struct {
-	db      *gorm.DB
-	repos   map[string]Repository
+	db       *gorm.DB
+	repos    map[string]Repository
 	entities map[string]reflect.Type
 }
 
@@ -552,6 +575,9 @@ func (r *RepositoryRegistry) AddRepository(name string, repo Repository) {
 func (r *RepositoryRegistry) CreateRepository(entity Entity) Repository {
 	name := reflect.TypeOf(entity).Elem().Name()
 	repo := newRepository(r.db, entity)
+	if repo == nil {
+		return nil
+	}
 	r.repos[name] = repo
 	return repo
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -85,7 +86,11 @@ func NewEmailChannel(mailer interface{ Send(email *struct{ To, Subject, Body str
 }
 
 func (c *EmailChannel) Send(notification *Notification) error {
-	return c.mailer.Send(&struct{ To, Subject, Body string }{To: "", Subject: notification.Subject, Body: notification.Content})
+	if len(notification.Channels) == 0 {
+		return errors.New("no email channels specified in notification")
+	}
+	recipients := strings.Join(notification.Channels, ", ")
+	return c.mailer.Send(&struct{ To, Subject, Body string }{To: recipients, Subject: notification.Subject, Body: notification.Content})
 }
 
 type SlackChannel struct {
@@ -122,7 +127,9 @@ func (c *SlackChannel) Send(notification *Notification) error {
 		return fmt.Errorf("failed to marshal slack message: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://slack.com/api/chat.postMessage", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create slack request: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -15,9 +16,9 @@ type LifecycleCommand struct {
 }
 
 type LifecycleResponse struct {
-	Success bool         `json:"success"`
-	Status  string       `json:"status"`
-	Error   string       `json:"error,omitempty"`
+	Success bool           `json:"success"`
+	Status  string         `json:"status"`
+	Error   string         `json:"error,omitempty"`
 	Data    map[string]any `json:"data,omitempty"`
 }
 
@@ -54,22 +55,17 @@ func (h *LifecycleHandler) OnReload(cb func() error) {
 }
 
 func (h *LifecycleHandler) Handle(cmd string, payload []byte) ([]byte, error) {
-	var req LifecycleCommand
+	action := strings.TrimSpace(cmd)
 	if len(payload) > 0 {
-		if err := json.Unmarshal(payload, &req); err != nil {
-			return json.Marshal(LifecycleResponse{
-				Success: false,
-				Status:  "error",
-				Error:   fmt.Sprintf("invalid payload: %v", err),
-			})
+		var req LifecycleCommand
+		if err := json.Unmarshal(payload, &req); err == nil && strings.TrimSpace(req.Action) != "" {
+			action = strings.TrimSpace(req.Action)
 		}
-	} else {
-		req.Action = cmd
 	}
 
 	var resp LifecycleResponse
 
-	switch req.Action {
+	switch action {
 	case "start":
 		if h.onStart == nil {
 			resp = LifecycleResponse{Success: false, Status: "error", Error: "start handler not set"}
@@ -127,7 +123,7 @@ func (h *LifecycleHandler) Handle(cmd string, payload []byte) ([]byte, error) {
 		}
 
 	default:
-		resp = LifecycleResponse{Success: false, Status: "error", Error: fmt.Sprintf("unknown action: %s", req.Action)}
+		resp = LifecycleResponse{Success: false, Status: "error", Error: fmt.Sprintf("unknown action: %s", action)}
 	}
 
 	return json.Marshal(resp)
@@ -171,7 +167,7 @@ func (a *AppTransport) Listen(ctx context.Context, mode Mode) error {
 	if a.sec != nil {
 		a.transport.UseSecurity(a.sec)
 	}
-	a.transport.server.SetHandler(func(cmd string, payload []byte) ([]byte, error) {
+	a.transport.SetHandler(func(cmd string, payload []byte) ([]byte, error) {
 		return a.lifecycle.Handle(cmd, payload)
 	})
 
@@ -204,8 +200,8 @@ type AppConnection struct {
 func NewGatewayTransport(gatewayID string) *GatewayTransport {
 	return &GatewayTransport{
 		gatewayID: gatewayID,
-		pairing:  NewGatewayPairingHandler(),
-		apps:     make(map[string]*AppConnection),
+		pairing:   NewGatewayPairingHandler(),
+		apps:      make(map[string]*AppConnection),
 	}
 }
 

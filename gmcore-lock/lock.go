@@ -221,7 +221,10 @@ func (l *RedisLock) Release() error {
 		return 0
 	`
 
-	_, err := l.client.Do(context.Background(), "EVAL", script, 1, key, owner)
+	// TODO: Accept context parameter in future API version
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := l.client.Do(ctx, "EVAL", script, 1, key, owner)
 	if err != nil {
 		return fmt.Errorf("failed to release redis lock: %w", err)
 	}
@@ -243,7 +246,10 @@ func (l *RedisLock) Extend(lifetime time.Duration) bool {
 
 	key := l.resource
 
-	result, err := l.client.Do(context.Background(), "PEXPIRE", key, lifetime.Milliseconds())
+	// TODO: Accept context parameter in future API version
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := l.client.Do(ctx, "PEXPIRE", key, lifetime.Milliseconds())
 	if err != nil {
 		return false
 	}

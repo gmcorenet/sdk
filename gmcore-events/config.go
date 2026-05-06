@@ -1,8 +1,7 @@
 package gmcore_events
 
 import (
-	"os"
-	"path/filepath"
+	"context"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 )
@@ -17,74 +16,34 @@ type ListenerConfig struct {
 	Async   bool   `yaml:"async" json:"async"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "events.yaml"),
-		filepath.Join(l.appPath, "config", "events.yml"),
-		filepath.Join(l.appPath, "events.yaml"),
-		filepath.Join(l.appPath, "events.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"events.yaml", "events.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *Config) ApplyTo(bus *Bus, registry HandlerRegistry) {
 	for eventName, listeners := range c.Listeners {
-		for _, listener := range listeners {
-			handler := registry.Get(listener.Handler)
+		for _, listenerConfig := range listeners {
+			handler := registry.Get(listenerConfig.Handler)
 			if handler == nil {
 				continue
 			}
 
-			listener := func(ctx context.Context, event interface{}) error {
+			handleFunc := func(ctx context.Context, event interface{}) error {
 				return handler.Handle(ctx, event)
 			}
 
-			if listener.Async {
-				go func() {
-					listener(context.Background(), nil)
-				}()
+			if listenerConfig.Async {
+				// TODO: async event dispatch requires a worker pool with proper context propagation.
+				// For now, register synchronously.
+				bus.Subscribe(eventName, handleFunc)
 			} else {
-				bus.Subscribe(eventName, listener)
+				bus.Subscribe(eventName, handleFunc)
 			}
 		}
 	}

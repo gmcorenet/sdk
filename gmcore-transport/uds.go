@@ -7,11 +7,12 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
 
-type UDSConfig struct {
+type UDSServerConfig struct {
 	Path       string
 	Perm       uint32
 	Group      string
@@ -19,7 +20,7 @@ type UDSConfig struct {
 }
 
 type UDSServer struct {
-	config  UDSConfig
+	config  UDSServerConfig
 	ln      net.Listener
 	sec     SecurityProvider
 	handler CommandHandler
@@ -27,7 +28,7 @@ type UDSServer struct {
 	closed  bool
 }
 
-func NewUDSServer(cfg UDSConfig) *UDSServer {
+func NewUDSServer(cfg UDSServerConfig) *UDSServer {
 	return &UDSServer{
 		config: cfg,
 	}
@@ -129,7 +130,8 @@ func (s *UDSServer) handleRaw(conn net.Conn) {
 				data = payload
 			}
 
-			resp, err := s.handler("uds", data)
+			cmd, payload := decodeCommandPayload("uds", data)
+			resp, err := s.handler(cmd, payload)
 			if err != nil {
 				conn.Write([]byte(fmt.Sprintf("ERROR: %v", err)))
 				continue
@@ -161,10 +163,10 @@ func (s *UDSServer) Close() error {
 }
 
 type UDSClient struct {
-	path   string
-	sec    SecurityProvider
-	conn   net.Conn
-	mu     sync.Mutex
+	path string
+	sec  SecurityProvider
+	conn net.Conn
+	mu   sync.Mutex
 }
 
 func NewUDSClient(path string) *UDSClient {
@@ -254,7 +256,11 @@ func setSocketGroup(socketPath, group string) error {
 	if err != nil {
 		return fmt.Errorf("failed to find group %s: %w", group, err)
 	}
-	return os.Chown(socketPath, -1, gr.Gid)
+	gid, err := strconv.Atoi(gr.Gid)
+	if err != nil {
+		return fmt.Errorf("failed to parse group id %s: %w", gr.Gid, err)
+	}
+	return os.Chown(socketPath, -1, gid)
 }
 
 func EnsureSocketDir(socketDir string) error {

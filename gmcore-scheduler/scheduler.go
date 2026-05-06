@@ -2,6 +2,9 @@ package gmcore_scheduler
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,12 +31,15 @@ type Scheduler interface {
 }
 
 type scheduler struct {
-	schedules map[string]*Schedule
-	mu        sync.RWMutex
-	stop      chan struct{}
-	done      chan struct{}
-	running   bool
-	wg        sync.WaitGroup
+	schedules  map[string]*Schedule
+	mu         sync.RWMutex
+	stop       chan struct{}
+	done       chan struct{}
+	running    bool
+	wg         sync.WaitGroup
+	stopOnce   sync.Once
+	ctx        context.Context
+	cancel     context.CancelFunc
 }
 
 func NewScheduler() *scheduler {
@@ -74,7 +80,13 @@ func (s *scheduler) GetDueTasks() []*Schedule {
 }
 
 func (s *scheduler) Run(schedule *Schedule) error {
-	ctx := context.Background()
+	s.mu.RLock()
+	ctx := s.ctx
+	s.mu.RUnlock()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	err := schedule.Task(ctx)
 	if err == nil {
 		schedule.LastRun = time.Now()
@@ -92,6 +104,7 @@ func (s *scheduler) Start() {
 	s.running = true
 	s.stop = make(chan struct{})
 	s.done = make(chan struct{})
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.mu.Unlock()
 
 	s.wg.Add(1)
@@ -118,17 +131,18 @@ func (s *scheduler) Start() {
 }
 
 func (s *scheduler) Stop() {
-	s.mu.Lock()
-	if !s.running {
+	s.stopOnce.Do(func() {
+		s.mu.Lock()
+		s.running = false
+		if s.cancel != nil {
+			s.cancel()
+		}
+		close(s.stop)
 		s.mu.Unlock()
-		return
-	}
-	s.running = false
-	close(s.stop)
-	s.mu.Unlock()
 
-	s.wg.Wait()
-	close(s.done)
+		s.wg.Wait()
+		close(s.done)
+	})
 }
 
 func (s *scheduler) IsRunning() bool {
@@ -148,7 +162,23 @@ func (s *scheduler) calculateNextRun(expression string, loc *time.Location) time
 }
 
 func parseCron(expr string, base time.Time) (time.Time, error) {
-	return base.Add(time.Minute), nil
+	if strings.HasPrefix(expr, "@every ") {
+		durationStr := strings.TrimPrefix(expr, "@every ")
+		d, err := time.ParseDuration(durationStr)
+		if err != nil {
+			return base.Add(time.Minute), fmt.Errorf("invalid duration: %w", err)
+		}
+		return base.Add(d), nil
+	}
+	if strings.HasPrefix(expr, "*/") {
+		intervalStr := strings.TrimPrefix(expr, "*/")
+		interval, err := strconv.Atoi(intervalStr)
+		if err != nil || interval <= 0 {
+			return base.Add(time.Minute), nil
+		}
+		return base.Add(time.Duration(interval)*time.Minute), nil
+	}
+	return base.Add(time.Minute), fmt.Errorf("unsupported cron expression: %s (only @every and */N formats supported)", expr)
 }
 
 func NewSchedule(id, cronExpr string, task Task) *Schedule {

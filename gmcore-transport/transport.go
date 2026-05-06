@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	ErrNotConnected   = errors.New("not connected")
-	ErrInvalidMessage = errors.New("invalid message")
-	ErrSecurityError  = errors.New("security error")
+	ErrNotConnected    = errors.New("not connected")
+	ErrInvalidMessage  = errors.New("invalid message")
+	ErrSecurityError   = errors.New("security error")
 	ErrHandshakeFailed = errors.New("handshake failed")
 )
 
@@ -74,10 +74,11 @@ type FullConfig struct {
 }
 
 type Transport struct {
-	config   Config
-	server   *Server
-	sec      SecurityProvider
-	mu       sync.RWMutex
+	config  Config
+	server  *Server
+	sec     SecurityProvider
+	handler CommandHandler
+	mu      sync.RWMutex
 }
 
 func New(cfg Config) *Transport {
@@ -88,6 +89,10 @@ func New(cfg Config) *Transport {
 
 func (t *Transport) UseSecurity(s SecurityProvider) {
 	t.sec = s
+}
+
+func (t *Transport) SetHandler(h CommandHandler) {
+	t.handler = h
 }
 
 func (t *Transport) Listen(ctx context.Context) error {
@@ -114,16 +119,23 @@ func (t *Transport) listenUDS(ctx context.Context) error {
 	}
 
 	t.server = NewServer(ln, t.sec)
+	if t.handler != nil {
+		t.server.SetHandler(t.handler)
+	}
 	return t.server.Serve(ctx)
 }
 
 func (t *Transport) listenTCP(ctx context.Context) error {
-	tcpServer := NewTCPServer(TCPConfig{
+	tcpServer := NewTCPServer(TCPServerConfig{
 		Host:  t.config.Host,
 		Ports: t.config.Ports,
 	})
 	tcpServer.UseSecurity(t.sec)
-	tcpServer.SetHandler(t.server.handler)
+	if t.handler != nil {
+		tcpServer.SetHandler(t.handler)
+	} else if t.server != nil {
+		tcpServer.SetHandler(t.server.handler)
+	}
 
 	errCh := make(chan error, 1)
 	stopCh := make(chan struct{})
@@ -187,6 +199,7 @@ func (t *Transport) Close() error {
 
 type SecurityProvider interface {
 	Secure(data []byte) ([]byte, error)
+	Sign(data []byte) []byte
 	Verify(data, sig []byte) bool
 	Handshake(conn net.Conn) error
 	Type() SecurityType
@@ -203,9 +216,10 @@ const (
 type NoOpSecurity struct{}
 
 func (s *NoOpSecurity) Secure(data []byte) ([]byte, error) { return data, nil }
-func (s *NoOpSecurity) Verify(data, sig []byte) bool      { return true }
-func (s *NoOpSecurity) Handshake(conn net.Conn) error     { return nil }
-func (s *NoOpSecurity) Type() SecurityType               { return SecurityNone }
+func (s *NoOpSecurity) Sign(data []byte) []byte            { return data }
+func (s *NoOpSecurity) Verify(data, sig []byte) bool       { return true }
+func (s *NoOpSecurity) Handshake(conn net.Conn) error      { return nil }
+func (s *NoOpSecurity) Type() SecurityType                 { return SecurityNone }
 
 type HMACSecurity struct {
 	key []byte
@@ -349,7 +363,8 @@ func (s *Server) handleRaw(conn net.Conn) {
 			}
 
 			if s.handler != nil {
-				resp, err := s.handler("raw", data)
+				cmd, payload := decodeCommandPayload("raw", data)
+				resp, err := s.handler(cmd, payload)
 				if err != nil {
 					conn.Write([]byte(fmt.Sprintf("ERROR: %v", err)))
 					continue
@@ -363,6 +378,22 @@ func (s *Server) handleRaw(conn net.Conn) {
 	}
 }
 
+func decodeCommandPayload(defaultCmd string, data []byte) (string, []byte) {
+	if len(data) == 0 {
+		return defaultCmd, data
+	}
+
+	var msg Message
+	if err := json.Unmarshal(data, &msg); err == nil && msg.Type != "" {
+		if msg.Body == nil {
+			return msg.Type, []byte{}
+		}
+		return msg.Type, msg.Body
+	}
+
+	return defaultCmd, data
+}
+
 func (s *Server) Close() error {
 	close(s.done)
 	s.mu.Lock()
@@ -374,7 +405,7 @@ func (s *Server) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	close(s.conns)
+	s.conns = nil
 
 	if len(errs) > 0 {
 		return fmt.Errorf("errors closing connections: %v", errs)

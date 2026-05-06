@@ -1,8 +1,7 @@
 package gmcore_messenger
 
 import (
-	"os"
-	"path/filepath"
+	"errors"
 	"reflect"
 	"sync"
 	"time"
@@ -76,11 +75,17 @@ type Transport interface {
 
 type InMemoryTransport struct {
 	messages []interface{}
+	inFlight []interface{}
 	mu       sync.RWMutex
 }
 
+var ErrMessageNotInFlight = errors.New("message not in flight")
+
 func NewInMemoryTransport() *InMemoryTransport {
-	return &InMemoryTransport{messages: make([]interface{}, 0)}
+	return &InMemoryTransport{
+		messages: make([]interface{}, 0),
+		inFlight: make([]interface{}, 0),
+	}
 }
 
 func (t *InMemoryTransport) Send(messages []interface{}) error {
@@ -98,16 +103,49 @@ func (t *InMemoryTransport) Receive() (interface{}, error) {
 	}
 	msg := t.messages[0]
 	t.messages = t.messages[1:]
+	t.inFlight = append(t.inFlight, msg)
 	return msg, nil
 }
 
-func (t *InMemoryTransport) Ack(message interface{}) error   { return nil }
-func (t *InMemoryTransport) Reject(message interface{}) error { return nil }
+func (t *InMemoryTransport) Ack(message interface{}) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	idx := indexOfMessage(t.inFlight, message)
+	if idx < 0 {
+		return ErrMessageNotInFlight
+	}
+	t.inFlight = append(t.inFlight[:idx], t.inFlight[idx+1:]...)
+	return nil
+}
+
+func (t *InMemoryTransport) Reject(message interface{}) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	idx := indexOfMessage(t.inFlight, message)
+	if idx < 0 {
+		return ErrMessageNotInFlight
+	}
+	t.inFlight = append(t.inFlight[:idx], t.inFlight[idx+1:]...)
+	t.messages = append([]interface{}{message}, t.messages...)
+	return nil
+}
+
+func indexOfMessage(messages []interface{}, target interface{}) int {
+	for i, message := range messages {
+		if reflect.DeepEqual(message, target) {
+			return i
+		}
+	}
+	return -1
+}
 
 type Worker struct {
 	transport Transport
 	bus       Bus
 	stop      chan struct{}
+	stopOnce  sync.Once
 }
 
 func NewWorker(transport Transport, bus Bus) *Worker {
@@ -137,71 +175,33 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) Stop() {
-	close(w.stop)
+	w.stopOnce.Do(func() {
+		close(w.stop)
+	})
 }
 
 type Config struct {
 	WorkerCount int                    `yaml:"worker_count" json:"worker_count"`
-	RetryPolicy RetryPolicy           `yaml:"retry_policy" json:"retry_policy"`
+	RetryPolicy RetryPolicy            `yaml:"retry_policy" json:"retry_policy"`
 	Transport   string                 `yaml:"transport" json:"transport"`
 	Params      map[string]interface{} `yaml:"params" json:"params"`
 }
 
 type RetryPolicy struct {
-	MaxRetries    int `yaml:"max_retries" json:"max_retries"`
-	InitialDelay  int `yaml:"initial_delay" json:"initial_delay"`
-	MaxDelay      int `yaml:"max_delay" json:"max_delay"`
-	Multiplier    float64 `yaml:"multiplier" json:"multiplier"`
-}
-
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "messenger.yaml"),
-		filepath.Join(l.appPath, "config", "messenger.yml"),
-		filepath.Join(l.appPath, "messenger.yaml"),
-		filepath.Join(l.appPath, "messenger.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
-		}
-	}
-
-	return nil, nil
+	MaxRetries   int     `yaml:"max_retries" json:"max_retries"`
+	InitialDelay int     `yaml:"initial_delay" json:"initial_delay"`
+	MaxDelay     int     `yaml:"max_delay" json:"max_delay"`
+	Multiplier   float64 `yaml:"multiplier" json:"multiplier"`
 }
 
 func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"messenger.yaml", "messenger.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
+		}
+	}
+	return nil, nil
 }
 
 func DefaultRetryPolicy() RetryPolicy {

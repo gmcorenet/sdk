@@ -1,8 +1,8 @@
 package gmcore_log
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
 )
@@ -17,56 +17,14 @@ type HandlerConfig struct {
 	Params map[string]interface{} `yaml:"params" json:"params"`
 }
 
-type ConfigLoader struct {
-	appPath string
-	env     map[string]string
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "log.yaml"),
-		filepath.Join(l.appPath, "config", "log.yml"),
-		filepath.Join(l.appPath, "config", "logging.yaml"),
-		filepath.Join(l.appPath, "config", "logging.yml"),
-		filepath.Join(l.appPath, "log.yaml"),
-		filepath.Join(l.appPath, "log.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
+func LoadConfig(appPath string) (*Config, error) {
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"log.yaml", "log.yml", "logging.yaml", "logging.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
 		}
 	}
-
 	return nil, nil
-}
-
-func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
 }
 
 func (c *Config) Build() (*Logger, error) {
@@ -98,7 +56,7 @@ func (c *Config) buildHandler(cfg HandlerConfig) (Handler, error) {
 	case "syslog":
 		return c.buildSyslogHandler(cfg.Params)
 	default:
-		return nil, nil
+		return nil, fmt.Errorf("unknown handler type: %s", cfg.Type)
 	}
 }
 
@@ -117,7 +75,7 @@ func (c *Config) buildConsoleHandler(params map[string]interface{}) (Handler, er
 func (c *Config) buildFileHandler(params map[string]interface{}) (Handler, error) {
 	filename, _ := params["filename"].(string)
 	if filename == "" {
-		return nil, nil
+		return nil, fmt.Errorf("filename is required for file handler")
 	}
 
 	h, err := NewFileHandler(filename)
@@ -135,7 +93,7 @@ func (c *Config) buildFileHandler(params map[string]interface{}) (Handler, error
 func (c *Config) buildRotatingHandler(params map[string]interface{}) (Handler, error) {
 	filename, _ := params["filename"].(string)
 	if filename == "" {
-		return nil, nil
+		return nil, fmt.Errorf("filename is required for rotating handler")
 	}
 
 	maxSize := int64(10485760) // 10MB default

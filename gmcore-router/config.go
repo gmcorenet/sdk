@@ -1,9 +1,8 @@
 package gmcore_router
 
 import (
+	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/gmcorenet/sdk/gmcore-config"
@@ -22,88 +21,65 @@ type RouteConfig struct {
 
 type HandlerRegistry interface {
 	Get(name string) HandlerInfo
+	CreateHandler(name string) http.HandlerFunc
 }
 
 type HandlerInfo struct {
 	Controller string
-	Method    string
-}
-
-type ConfigLoader struct {
-	appPath  string
-	env      map[string]string
-	registry HandlerRegistry
-}
-
-func NewConfigLoader(appPath string) *ConfigLoader {
-	return &ConfigLoader{
-		appPath: appPath,
-		env:     gmcore_config.LoadAppEnv(appPath),
-	}
-}
-
-func (l *ConfigLoader) SetRegistry(r HandlerRegistry) {
-	l.registry = r
-}
-
-func (l *ConfigLoader) Load(path string) (*Config, error) {
-	cfg := &Config{}
-
-	opts := gmcore_config.Options{
-		Env:        l.env,
-		Parameters: map[string]string{},
-		Strict:     false,
-	}
-
-	if err := gmcore_config.LoadYAML(path, cfg, opts); err != nil {
-		return nil, err
-	}
-
-	return cfg, nil
-}
-
-func (l *ConfigLoader) LoadDefault() (*Config, error) {
-	candidates := []string{
-		filepath.Join(l.appPath, "config", "routes.yaml"),
-		filepath.Join(l.appPath, "config", "routes.yml"),
-		filepath.Join(l.appPath, "routes.yaml"),
-		filepath.Join(l.appPath, "routes.yml"),
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			return l.Load(path)
-		}
-	}
-
-	return nil, nil
+	Method     string
 }
 
 func LoadConfig(appPath string) (*Config, error) {
-	loader := NewConfigLoader(appPath)
-	return loader.LoadDefault()
+	l := gmcore_config.NewLoader[Config](appPath)
+	for _, name := range []string{"routes.yaml", "routes.yml"} {
+		if cfg, err := l.LoadDefault(name); cfg != nil || err != nil {
+			return cfg, err
+		}
+	}
+	return nil, nil
 }
 
 func (c *Config) ApplyTo(router *Router, registry HandlerRegistry) error {
+	if router == nil {
+		return fmt.Errorf("router cannot be nil")
+	}
+	if registry == nil {
+		return fmt.Errorf("handler registry cannot be nil")
+	}
+
 	for _, route := range c.Routes {
-		if dr, ok := registry.(*DefaultHandlerRegistry); ok {
-			handler := dr.CreateHandler(route.Handler)
-			router.Add(
-				joinMethods(route.Methods),
-				route.Path,
-				route.Name,
-				handler,
-			)
+		handler := registry.CreateHandler(route.Handler)
+		methods := normalizeMethods(route.Methods)
+		if len(methods) == 0 {
+			router.Add("", route.Path, route.Name, handler)
+			continue
+		}
+
+		for _, method := range methods {
+			router.Add(method, route.Path, route.Name, handler)
 		}
 	}
 	return nil
 }
 
-func joinMethods(methods []string) string {
+func normalizeMethods(methods []string) []string {
 	if len(methods) == 0 {
-		return ""
+		return nil
 	}
-	return strings.Join(methods, " ")
+	normalized := make([]string, 0, len(methods))
+	seen := make(map[string]struct{}, len(methods))
+	for _, method := range methods {
+		m := strings.ToUpper(strings.TrimSpace(method))
+		if m == "" {
+			continue
+		}
+		if _, ok := seen[m]; ok {
+			continue
+		}
+		seen[m] = struct{}{}
+		normalized = append(normalized, m)
+	}
+	return normalized
 }
 
 type DefaultHandlerRegistry struct {
