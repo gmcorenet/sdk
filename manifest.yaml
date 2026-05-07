@@ -1,0 +1,4 @@
+name: sdks
+version: 1.0.0
+type: sdk
+description: GMCore SDKs monorepo — collection of reusable Go SDK libraries (templating, mailer, log, form, etc.)

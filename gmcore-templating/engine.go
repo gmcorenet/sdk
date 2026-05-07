@@ -17,6 +17,25 @@ import (
 	"time"
 )
 
+var extensionRegistry = map[string]interface{}{}
+var extMu sync.RWMutex
+
+func RegisterFunc(name string, fn interface{}) {
+	extMu.Lock()
+	defer extMu.Unlock()
+	extensionRegistry[name] = fn
+}
+
+func GetFuncs() template.FuncMap {
+	extMu.RLock()
+	defer extMu.RUnlock()
+	fm := template.FuncMap{}
+	for k, v := range extensionRegistry {
+		fm[k] = v
+	}
+	return fm
+}
+
 type Config struct {
 	AppRoot      string
 	SystemRoot   string
@@ -473,6 +492,11 @@ func (e *Engine) baseFuncs(ctx context.Context, payload map[string]interface{}, 
 	}
 	for key, value := range extra {
 		funcs[key] = value
+	}
+	for key, value := range GetFuncs() {
+		if _, exists := funcs[key]; !exists {
+			funcs[key] = value
+		}
 	}
 	funcs["default"] = func(value interface{}, fallback interface{}) interface{} {
 		if value == nil {
